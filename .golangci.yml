@@ -1,0 +1,44 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+    - unparam
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+        - (*net/http.Response).Body.Close
+    gosec:
+      excludes:
+        # Backoff jitter needs spread, not unpredictability.
+        - G404
+        # Paths for upload and download come from the caller by design.
+        - G304
+        - G301
+        - G306
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - unparam
+      # coder/websocket owns the hijacked response for the life of the conn.
+      - path: websocket\.go
+        linters:
+          - bodyclose

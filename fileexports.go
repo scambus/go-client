@@ -1,0 +1,131 @@
+package scambus
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+)
+
+type FileExportService struct{ client *Client }
+
+type CreateFileExportInput struct {
+	SourceType     string          `json:"source_type"`
+	SourceID       string          `json:"source_id,omitempty"`
+	EntityType     string          `json:"entity_type"`
+	Format         string          `json:"format"`
+	Name           string          `json:"name,omitempty"`
+	FilterCriteria *FilterCriteria `json:"filter_criteria,omitempty"`
+	Columns        []string        `json:"columns,omitempty"`
+	Limit          *int            `json:"limit,omitempty"`
+	DateRangeStart string          `json:"date_range_start,omitempty"`
+	DateRangeEnd   string          `json:"date_range_end,omitempty"`
+	IncludeOurs    bool            `json:"include_ours,omitempty"`
+	FormatOptions  map[string]any  `json:"format_options,omitempty"`
+}
+
+func (s *FileExportService) Create(ctx context.Context, in CreateFileExportInput) (*FileExport, error) {
+	if in.Format == "" {
+		in.Format = "csv"
+	}
+	var out FileExport
+	if err := s.client.post(ctx, "/file-exports", in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *FileExportService) List(ctx context.Context) ([]FileExport, error) {
+	var out []FileExport
+	if err := s.client.get(ctx, "/file-exports", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *FileExportService) Get(ctx context.Context, exportID string) (*FileExport, error) {
+	var out FileExport
+	if err := s.client.get(ctx, "/file-exports/"+exportID, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *FileExportService) Rename(ctx context.Context, exportID, name string) (*FileExport, error) {
+	var out FileExport
+	if err := s.client.patch(ctx, "/file-exports/"+exportID+"/rename", map[string]string{"name": name}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *FileExportService) Delete(ctx context.Context, exportID string) error {
+	return s.client.delete(ctx, "/file-exports/"+exportID)
+}
+
+type downloadTarget struct {
+	URL      string `json:"url"`
+	FileName string `json:"file_name"`
+}
+
+// DownloadURL returns the presigned location of the finished export.
+func (s *FileExportService) DownloadURL(ctx context.Context, exportID string) (string, string, error) {
+	var out downloadTarget
+	if err := s.client.get(ctx, "/file-exports/"+exportID+"/download", nil, &out); err != nil {
+		return "", "", err
+	}
+	return out.URL, out.FileName, nil
+}
+
+// Download resolves the presigned URL and streams the bytes. The URL carries
+// its own credentials, so no auth header is sent with the second request.
+func (s *FileExportService) Download(ctx context.Context, exportID string, w io.Writer) (int64, error) {
+	target, _, err := s.DownloadURL(ctx, exportID)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := s.client.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("scambus: fetch export %s: %w", exportID, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return 0, fmt.Errorf("scambus: fetch export %s: %s", exportID, resp.Status)
+	}
+	return io.Copy(w, resp.Body)
+}
+
+func (s *FileExportService) DownloadToFile(ctx context.Context, exportID, path string) error {
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	// Write to a sibling temp file so a failed download cannot truncate a
+	// good one that is already there.
+	f, err := os.CreateTemp(filepath.Dir(path), ".scambus-download-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}()
+	if err := f.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := s.Download(ctx, exportID, f); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
