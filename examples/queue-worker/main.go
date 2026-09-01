@@ -30,6 +30,8 @@ func main() {
 	for ctx.Err() == nil {
 		item, err := client.Queues.Claim(ctx, queueID)
 		if err != nil {
+			// A missing or inaccessible queue is an error; only an empty
+			// queue yields a nil item.
 			log.Fatal(err)
 		}
 		if item == nil {

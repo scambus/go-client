@@ -27,7 +27,7 @@ Personas, Reports, Automations, FileExports, Media, Comments and Admin.
 	entry, err := client.Journal.CreateDetection(ctx, scambus.DetectionInput{
 		Description: "Automated phishing detection",
 		Identifiers: []scambus.IdentifierLookup{
-			{Type: "phone", Value: "+12125551234", Confidence: scambus.Ptr(0.9)},
+			{Type: string(scambus.IdentifierTypePhone), Value: "+12125551234", Confidence: scambus.Ptr(0.9)},
 		},
 	})
 
@@ -43,9 +43,18 @@ ErrCursorExpired and ErrServer.
 
 # Retries
 
-Transient failures (408, 429, 5xx and connection errors) retry with full-jitter
-exponential backoff, honouring Retry-After and bounded by WithMaxRetries and
-WithRetryMaxTime. Cancelling the context stops the retry loop.
+Transient failures retry with full-jitter exponential backoff, honouring
+Retry-After and bounded by WithMaxRetries and WithRetryMaxTime. A 408 or 429
+means the server did not process the request, so any method is replayed. A 5xx
+or a dropped connection may follow a committed write, so only idempotent
+methods are replayed there; a failed POST is reported, never repeated.
+Cancelling the context stops the retry loop.
+
+The client refuses HTTP redirects. Credentials travel in headers, and Go
+forwards a custom header such as X-API-Key across a host boundary.
+
+A *Client is safe for concurrent use by any number of goroutines. A *WSClient
+is not.
 
 # Consuming streams
 

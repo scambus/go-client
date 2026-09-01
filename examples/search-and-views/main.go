@@ -17,10 +17,10 @@ func main() {
 	ctx := context.Background()
 
 	filter := &scambus.FilterCriteria{
-		Types:         []string{"phone", "email"},
-		MinConfidence: scambus.Ptr(0.8),
-		CreatedAfter:  "2025-01-01T00:00:00Z",
-		Country:       "US",
+		IdentifierType: string(scambus.IdentifierTypePhone),
+		MinConfidence:  scambus.Ptr(0.8),
+		CreatedAfter:   "2025-01-01T00:00:00Z",
+		Country:        "US",
 	}
 
 	count := 0

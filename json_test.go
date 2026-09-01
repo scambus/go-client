@@ -2,6 +2,8 @@ package scambus
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -213,4 +215,39 @@ func TestDetailStructsMatchBackendFieldNames(t *testing.T) {
 			}
 		}
 	}
+}
+
+// queryEntriesBody and searchIdentifiersBody flatten FilterCriteria by
+// embedding it. A JSON name declared on both sides is resolved by depth: the
+// outer field wins and the caller's filter value is dropped in silence.
+func TestEmbeddedFilterNamesDoNotCollide(t *testing.T) {
+	filterNames := jsonNames(reflect.TypeOf(FilterCriteria{}))
+
+	for _, outer := range []reflect.Type{
+		reflect.TypeOf(queryEntriesBody{}),
+		reflect.TypeOf(searchIdentifiersBody{}),
+	} {
+		for i := range outer.NumField() {
+			field := outer.Field(i)
+			if field.Anonymous {
+				continue
+			}
+			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			if filterNames[name] {
+				t.Errorf("%s.%s declares %q, which FilterCriteria already carries; the filter value would be dropped",
+					outer.Name(), field.Name, name)
+			}
+		}
+	}
+}
+
+func jsonNames(t reflect.Type) map[string]bool {
+	names := map[string]bool{}
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name != "" && name != "-" {
+			names[name] = true
+		}
+	}
+	return names
 }

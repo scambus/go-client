@@ -91,9 +91,19 @@ client, err := scambus.New(
 )
 ```
 
-Transient failures (408, 429, 5xx and connection errors) retry with full-jitter
-exponential backoff and honour `Retry-After`. Cancelling the context stops the
-retry loop.
+Transient failures retry with full-jitter exponential backoff and honour
+`Retry-After`. Cancelling the context stops the retry loop.
+
+A 408 or 429 means the server did not process the request, so any method is
+replayed. A 5xx or a dropped connection may follow a committed write, so only
+idempotent methods are replayed there — a failed `POST` is reported, never
+repeated.
+
+The client refuses HTTP redirects: credentials travel in headers, and Go
+forwards a custom header such as `X-API-Key` across a host boundary.
+
+A `*Client` is safe for concurrent use by any number of goroutines. A
+`*WSClient` is not.
 
 ## Services
 
@@ -169,7 +179,8 @@ later:
 done, err := client.Journal.CompleteActivity(ctx, entry.ID, scambus.NewTime(time.Now().UTC()), "manual", "")
 ```
 
-Attach media and the client builds the evidence record:
+Attach media and the client builds the evidence records. The API accepts one
+media item per evidence record, so each item gets its own:
 
 ```go
 media, _ := client.Media.UploadFile(ctx, "screenshot.png", &scambus.MediaUpload{Notes: "Phishing page"})
@@ -190,11 +201,11 @@ streams and file exports. Optional scalars are pointers; use `scambus.Ptr`.
 
 ```go
 filter := &scambus.FilterCriteria{
-	Types:          []string{"phone", "email"},
-	MinConfidence:  scambus.Ptr(0.8),
-	CreatedAfter:   "2025-01-01T00:00:00Z",
-	Country:        "US",
-	ExcludedTypes:  []string{"note"},
+	Types:         []string{"detection", "phone_call"},
+	MinConfidence: scambus.Ptr(0.8),
+	CreatedAfter:  "2025-01-01T00:00:00Z",
+	Country:       "US",
+	ExcludedTypes: []string{"note"},
 }
 
 result, err := client.Journal.Query(ctx, scambus.QueryEntriesInput{
@@ -204,7 +215,11 @@ result, err := client.Journal.Query(ctx, scambus.QueryEntriesInput{
 })
 ```
 
-`Journal.QueryAll` and `Search.IdentifiersAll` walk every page for you.
+`Journal.QueryAll` and `Search.IdentifiersAll` walk every page for you, and
+stop if the server hands back a cursor that does not advance.
+
+Paging on the list endpoints uses `PageRequest`. The API reads `page` and
+`pageSize` (default 25, maximum 100); it ignores `limit`.
 
 ## Consuming a stream
 
@@ -372,3 +387,27 @@ go vet ./...
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Notes on the API
+
+A few behaviours are worth knowing before you reach for them.
+
+**`Queues.Update` is a whole-object replace.** The server writes several
+fields unconditionally, so an omitted field becomes its zero value — which
+would deactivate the queue and clear its description. `Update` therefore reads
+the queue, applies your `QueuePatch`, and resends every field.
+
+**Closing a case needs a resolution.** Set `Status` to `closed` together with
+`Resolution` (one of `resolved`, `unresolved`, `transferred`, `duplicate`) and
+a non-empty `ClosureNotes`.
+
+**Consume methods take the consumer key**, not the stream id.
+
+**`FileExports.Download` fetches a presigned URL**, then the bytes from it.
+That second request carries no credentials. Use `DownloadURL` if you want the
+location instead of the content.
+
+**An automation API key secret is returned once**, on `CreateAPIKey`, in the
+`Key` field. It cannot be recovered afterwards.
+
+**`GET /tags/history` was removed upstream** and has no client method.

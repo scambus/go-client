@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -567,5 +568,71 @@ func TestIdentifierSummaryPassesTypeFilter(t *testing.T) {
 	}
 	if srv.last().Query != "type=phone" {
 		t.Fatalf("query %q", srv.last().Query)
+	}
+}
+
+// The eight typed creators each copy the same common fields into
+// CreateEntryInput. A field added to one and forgotten in another stops
+// being sent for exactly that entry type, which is close to invisible.
+func TestEveryCreatorCarriesTheSameCommonFields(t *testing.T) {
+	common := []string{
+		"Description", "Identifiers", "OurIdentifiers", "Evidence", "Media",
+		"CaseID", "Tags", "Metadata", "ParentJournalEntryID", "Originator",
+		"IsTest", "ExternalIdentifiers", "ExtractExternalIdentifiers",
+	}
+	inputs := []any{
+		DetectionInput{}, PhoneCallInput{}, EmailInput{}, TextConversationInput{},
+		ConversationContinuationInput{}, NoteInput{}, ImportInput{}, ExportInput{},
+	}
+
+	for _, in := range inputs {
+		typ := reflect.TypeOf(in)
+		for _, field := range common {
+			if _, ok := typ.FieldByName(field); !ok {
+				t.Errorf("%s is missing the common field %s", typ.Name(), field)
+			}
+		}
+	}
+}
+
+// applyCommon is copied per input type; this catches a copy that forgets to
+// forward one of the fields.
+func TestApplyCommonForwardsEveryField(t *testing.T) {
+	populated := DetectionInput{
+		Description:                "d",
+		Identifiers:                []IdentifierLookup{{Type: "phone", Value: "+1"}},
+		OurIdentifiers:             []IdentifierLookup{{Type: "phone", Value: "+2"}},
+		Evidence:                   []Evidence{{Type: "document"}},
+		CaseID:                     "c1",
+		Tags:                       []TagLookup{{TagName: "t"}},
+		Metadata:                   map[string]any{"k": "v"},
+		ParentJournalEntryID:       "e0",
+		Originator:                 &OriginatorLookup{Type: "user", Identifier: "u1"},
+		IsTest:                     true,
+		ExternalIdentifiers:        []ExternalIdentifierInput{{ExternalSystem: "s", ExternalID: "x"}},
+		ExtractExternalIdentifiers: true,
+	}
+
+	var entry CreateEntryInput
+	populated.applyCommon(&entry)
+
+	checks := map[string]bool{
+		"Description":                entry.Description == "d",
+		"Identifiers":                len(entry.IdentifierLookups) == 1,
+		"OurIdentifiers":             len(entry.OurIdentifierLookups) == 1,
+		"Evidence":                   len(entry.Evidence) == 1,
+		"CaseID":                     entry.CaseID == "c1",
+		"Tags":                       len(entry.TagLookups) == 1,
+		"Metadata":                   entry.Metadata["k"] == "v",
+		"ParentJournalEntryID":       entry.ParentJournalEntryID == "e0",
+		"Originator":                 entry.Originator != nil,
+		"IsTest":                     entry.IsTest,
+		"ExternalIdentifiers":        len(entry.ExternalIdentifiers) == 1,
+		"ExtractExternalIdentifiers": entry.ExtractExternalIdentifiers,
+	}
+	for field, ok := range checks {
+		if !ok {
+			t.Errorf("applyCommon did not forward %s", field)
+		}
 	}
 }
