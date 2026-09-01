@@ -10,17 +10,47 @@ type PhoneCallDetails struct {
 	RecordingURL  string                `json:"recording_url,omitempty"`
 	TranscriptURL string                `json:"transcript_url,omitempty"`
 	Transcript    []ConversationMessage `json:"transcript,omitempty"`
+	StartTime     Time                  `json:"start_time"`
+	EndTime       Time                  `json:"end_time"`
+	Platform      string                `json:"platform,omitempty"`
+}
+
+type EmailAddress struct {
+	Name    string `json:"name,omitempty"`
+	Address string `json:"address"`
+}
+
+type EmailPublicKey struct {
+	Type        string `json:"type,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Key         string `json:"key,omitempty"`
 }
 
 type EmailDetails struct {
-	Direction   string            `json:"direction,omitempty"`
-	Subject     string            `json:"subject,omitempty"`
-	SentAt      Time              `json:"sent_at,omitzero"`
+	Direction   string            `json:"direction"`
+	Subject     string            `json:"subject"`
 	Body        string            `json:"body,omitempty"`
 	HTMLBody    string            `json:"html_body,omitempty"`
-	MessageID   string            `json:"message_id,omitempty"`
+	MessageID   string            `json:"message_id"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Attachments []string          `json:"attachments,omitempty"`
+	SentAt      Time              `json:"sent_at"`
+
+	FromAddress      *EmailAddress  `json:"from_address,omitempty"`
+	ToAddresses      []EmailAddress `json:"to_addresses,omitempty"`
+	CCAddresses      []EmailAddress `json:"cc_addresses,omitempty"`
+	BCCAddresses     []EmailAddress `json:"bcc_addresses,omitempty"`
+	ReplyToAddresses []EmailAddress `json:"reply_to_addresses,omitempty"`
+
+	SourceIP     string   `json:"source_ip,omitempty"`
+	SPFResult    string   `json:"spf_result,omitempty"`
+	DKIMResult   string   `json:"dkim_result,omitempty"`
+	DMARCResult  string   `json:"dmarc_result,omitempty"`
+	AuthFailures []string `json:"auth_failures,omitempty"`
+
+	PublicKeys           []EmailPublicKey `json:"public_keys,omitempty"`
+	RawEmailMediaID      string           `json:"raw_email_media_id,omitempty"`
+	ExtractedBodyMediaID string           `json:"extracted_body_media_id,omitempty"`
 }
 
 type TextConversationDetails struct {
@@ -31,7 +61,7 @@ type TextConversationDetails struct {
 	LastMessageAt    Time           `json:"last_message_at,omitzero"`
 	SourceType       string         `json:"source_type,omitempty"`
 	Subject          string         `json:"subject,omitempty"`
-	ParticipantCount *int           `json:"participant_count,omitempty"`
+	ParticipantCount int            `json:"participant_count,omitempty"`
 	ExportFormat     string         `json:"export_format,omitempty"`
 	CollectionMethod string         `json:"collection_method,omitempty"`
 	ChainOfCustody   []CustodyEvent `json:"chain_of_custody,omitempty"`
@@ -47,7 +77,7 @@ type ConversationContinuationDetails struct {
 type ConversationMessage struct {
 	Index                   int                    `json:"index"`
 	MessageID               string                 `json:"message_id"`
-	Timestamp               Time                   `json:"timestamp,omitzero"`
+	Timestamp               Time                   `json:"timestamp"`
 	Body                    string                 `json:"body"`
 	IsOutgoing              bool                   `json:"is_outgoing"`
 	MessageType             string                 `json:"message_type,omitempty"`
@@ -85,7 +115,7 @@ type MessageAttachment struct {
 }
 
 type CustodyEvent struct {
-	Timestamp Time   `json:"timestamp,omitzero"`
+	Timestamp Time   `json:"timestamp"`
 	Event     string `json:"event"`
 	Method    string `json:"method"`
 	Actor     string `json:"actor,omitempty"`
@@ -94,93 +124,40 @@ type CustodyEvent struct {
 
 type DetectionDetails struct {
 	Data       map[string]any `json:"data,omitempty"`
-	Category   string         `json:"category,omitempty"`
-	Details    map[string]any `json:"details,omitempty"`
-	Confidence *float64       `json:"confidence,omitempty"`
+	DetectedAt Time           `json:"detected_at"`
 }
 
 type ImportDetails struct {
-	Source      string `json:"source"`
-	RecordCount int    `json:"record_count"`
-	ImportedAt  Time   `json:"imported_at,omitzero"`
-	FileName    string `json:"file_name,omitempty"`
-	Notes       string `json:"notes,omitempty"`
+	Data map[string]any `json:"data,omitempty"`
 }
 
 type ExportDetails struct {
-	Destination string `json:"destination"`
-	RecordCount int    `json:"record_count"`
-	ExportedAt  Time   `json:"exported_at,omitzero"`
-	FileName    string `json:"file_name,omitempty"`
-	Notes       string `json:"notes,omitempty"`
-}
-
-type ContactDetails struct {
-	Method      string `json:"method"`
-	Direction   string `json:"direction"`
-	ContactedAt Time   `json:"contacted_at,omitzero"`
-	Duration    *int   `json:"duration,omitempty"`
-	Outcome     string `json:"outcome,omitempty"`
-	Notes       string `json:"notes,omitempty"`
-}
-
-type ResearchDetails struct {
-	Topic        string   `json:"topic"`
-	ResearchedAt Time     `json:"researched_at,omitzero"`
-	Sources      []string `json:"sources,omitempty"`
-	Findings     string   `json:"findings,omitempty"`
-	Confidence   *float64 `json:"confidence,omitempty"`
-}
-
-type AnalysisDetails struct {
-	AnalysisType string         `json:"analysis_type"`
-	Findings     string         `json:"findings"`
-	AnalyzedAt   Time           `json:"analyzed_at,omitzero"`
-	Confidence   *float64       `json:"confidence,omitempty"`
-	Metrics      map[string]any `json:"metrics,omitempty"`
-}
-
-type ActionDetails struct {
-	ActionType string `json:"action_type"`
-	TakenAt    Time   `json:"taken_at,omitzero"`
-	Outcome    string `json:"outcome,omitempty"`
-	Notes      string `json:"notes,omitempty"`
-}
-
-type ObservationDetails struct {
-	ObservationType string `json:"observation_type"`
-	ObservedAt      Time   `json:"observed_at,omitzero"`
-	Data            string `json:"data"`
-	Significance    string `json:"significance,omitempty"`
-}
-
-type NoteDetails struct {
-	Content  string `json:"content"`
-	NotedAt  Time   `json:"noted_at,omitzero"`
-	Category string `json:"category,omitempty"`
-}
-
-type UpdateDetails struct {
-	UpdateType    string `json:"update_type"`
-	UpdatedAt     Time   `json:"updated_at,omitzero"`
-	Changes       string `json:"changes"`
-	PreviousValue string `json:"previous_value,omitempty"`
-	NewValue      string `json:"new_value,omitempty"`
+	Data map[string]any `json:"data,omitempty"`
 }
 
 type ActivityCompleteDetails struct {
 	CompletionReason string `json:"completion_reason"`
-	StartTime        Time   `json:"start_time,omitzero"`
-	EndTime          Time   `json:"end_time,omitzero"`
+	StartTime        Time   `json:"start_time"`
+	EndTime          Time   `json:"end_time"`
 	DurationSeconds  int    `json:"duration_seconds"`
 }
 
-type TagOperationDetails struct {
-	Operation  string `json:"operation"`
+type TagRef struct {
 	TagID      string `json:"tag_id"`
 	TagValueID string `json:"tag_value_id,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	Notes      string `json:"notes,omitempty"`
+	TagName    string `json:"tag_name,omitempty"`
+}
+
+type TagOperationDetails struct {
+	Operation    string         `json:"operation"`
+	TagID        string         `json:"tag_id,omitempty"`
+	TagValueID   string         `json:"tag_value_id,omitempty"`
+	TagName      string         `json:"tag_name,omitempty"`
+	TagValueName string         `json:"tag_value_name,omitempty"`
+	Tags         []TagRef       `json:"tags,omitempty"`
+	Reason       string         `json:"reason,omitempty"`
+	BatchID      string         `json:"batch_id,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 type IdentifierConfidenceUpdate struct {
@@ -201,7 +178,7 @@ type RedactionDetails struct {
 	IdentifierType string   `json:"identifier_type"`
 	OriginalHash   string   `json:"original_hash"`
 	RedactedFields []string `json:"redacted_fields"`
-	RedactedAt     Time     `json:"redacted_at,omitzero"`
+	RedactedAt     Time     `json:"redacted_at"`
 	Reason         string   `json:"reason,omitempty"`
 }
 
@@ -328,4 +305,81 @@ func ParseIdentifierDetails(identifierType string, data map[string]any) (any, er
 	default:
 		return data, nil
 	}
+}
+
+type CheckFailureRecord struct {
+	Check   string `json:"check"`
+	Message string `json:"message,omitempty"`
+}
+
+type CheckDetails struct {
+	IdentifierID       string               `json:"identifier_id"`
+	Failures           []CheckFailureRecord `json:"failures,omitempty"`
+	OverriddenFailures []CheckFailureRecord `json:"overridden_failures,omitempty"`
+	PreviousCap        *float64             `json:"previous_cap,omitempty"`
+	NewCap             *float64             `json:"new_cap,omitempty"`
+	Reason             string               `json:"reason,omitempty"`
+}
+
+type DataContribution struct {
+	IdentifierID string         `json:"identifier_id"`
+	Data         map[string]any `json:"data,omitempty"`
+}
+
+type DataOperationDetails struct {
+	Identifiers []DataContribution `json:"identifiers"`
+	Reason      string             `json:"reason,omitempty"`
+	Metadata    map[string]any     `json:"metadata,omitempty"`
+}
+
+type TaskUpdateDetails struct {
+	TaskID    string `json:"task_id"`
+	TaskTitle string `json:"task_title"`
+	OldStatus string `json:"old_status"`
+	NewStatus string `json:"new_status"`
+}
+
+type TaskAssignmentDetails struct {
+	TaskID      string `json:"task_id"`
+	TaskTitle   string `json:"task_title"`
+	OldAssignee string `json:"old_assignee,omitempty"`
+	NewAssignee string `json:"new_assignee,omitempty"`
+}
+
+type CaseHandoffDetails struct {
+	FromUserID      string `json:"from_user_id"`
+	FromUserName    string `json:"from_user_name"`
+	ToUserID        string `json:"to_user_id"`
+	ToUserName      string `json:"to_user_name"`
+	Reason          string `json:"reason"`
+	Notes           string `json:"notes,omitempty"`
+	ReassignedTasks int    `json:"reassigned_tasks"`
+}
+
+type ScamFactorScoreDetail struct {
+	Factor    string  `json:"factor"`
+	Score     float64 `json:"score"`
+	Rationale string  `json:"rationale,omitempty"`
+}
+
+type ScamClassificationDetails struct {
+	FactorScores    []ScamFactorScoreDetail `json:"factor_scores"`
+	CompositeScore  float64                 `json:"composite_score"`
+	PriorComposite  float64                 `json:"prior_composite_score"`
+	IsFirstAnalysis bool                    `json:"is_first_analysis"`
+	Summary         string                  `json:"summary"`
+	ModelUsed       string                  `json:"model_used"`
+	MessageCount    int                     `json:"message_count"`
+	ContextCount    int                     `json:"context_count"`
+}
+
+type FunnelActionDetails struct {
+	FunnelID   string         `json:"funnel_id"`
+	FunnelName string         `json:"funnel_name"`
+	StageID    string         `json:"stage_id,omitempty"`
+	StageName  string         `json:"stage_name,omitempty"`
+	ActionType string         `json:"action_type"`
+	ClusterID  string         `json:"cluster_id"`
+	EntryID    string         `json:"entry_id,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }

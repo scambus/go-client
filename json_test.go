@@ -171,3 +171,46 @@ func TestParseIdentifierDetailsByType(t *testing.T) {
 		t.Fatalf("unknown type should pass the map through, got %T", unknown)
 	}
 }
+
+// Field names here were read from internal/models/journal_entry_details.go,
+// not from the client, so a drift in either direction fails.
+func TestDetailStructsMatchBackendFieldNames(t *testing.T) {
+	cases := []struct {
+		name  string
+		value any
+		want  []string
+	}{
+		{"phone_call", PhoneCallDetails{Direction: "inbound", StartTime: NewTime(time.Now()), Platform: "pstn"},
+			[]string{"direction", "start_time", "platform"}},
+		{"email", EmailDetails{Direction: "inbound", Subject: "s", MessageID: "m", SourceIP: "1.2.3.4", SPFResult: "pass"},
+			[]string{"direction", "subject", "message_id", "source_ip", "spf_result"}},
+		{"text_conversation", TextConversationDetails{Platform: "whatsapp", ParticipantCount: 2},
+			[]string{"platform", "participant_count"}},
+		{"activity_complete", ActivityCompleteDetails{CompletionReason: "manual", DurationSeconds: 5},
+			[]string{"completion_reason", "start_time", "end_time", "duration_seconds"}},
+		{"case_handoff", CaseHandoffDetails{FromUserID: "a", ToUserID: "b", Reason: "r"},
+			[]string{"from_user_id", "to_user_id", "reason", "reassigned_tasks"}},
+		{"scam_classification", ScamClassificationDetails{Summary: "s", ModelUsed: "m"},
+			[]string{"composite_score", "prior_composite_score", "is_first_analysis", "model_used"}},
+		{"funnel_action", FunnelActionDetails{FunnelID: "f", ActionType: "a", ClusterID: "c"},
+			[]string{"funnel_id", "action_type", "cluster_id"}},
+		{"task_update", TaskUpdateDetails{TaskID: "t", NewStatus: "done"},
+			[]string{"task_id", "task_title", "old_status", "new_status"}},
+	}
+
+	for _, tc := range cases {
+		raw, err := json.Marshal(tc.value)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		for _, field := range tc.want {
+			if _, present := got[field]; !present {
+				t.Errorf("%s is missing %q; got %s", tc.name, field, raw)
+			}
+		}
+	}
+}

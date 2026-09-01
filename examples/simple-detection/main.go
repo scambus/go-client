@@ -29,8 +29,7 @@ func main() {
 			{TagName: "ScamType", TagValue: "Phishing"},
 		},
 		Details: &scambus.DetectionDetails{
-			Category:   "phishing",
-			Confidence: scambus.Ptr(0.92),
+			Data: map[string]any{"category": "phishing", "score": 0.92},
 		},
 	})
 	if err != nil {

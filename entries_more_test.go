@@ -63,7 +63,7 @@ func TestCreateTextConversationKeepsSuppliedDetails(t *testing.T) {
 		Platform:    "whatsapp",
 		StartTime:   start,
 		EndTime:     start,
-		Details:     &TextConversationDetails{ConversationID: "abc", ParticipantCount: Ptr(3)},
+		Details:     &TextConversationDetails{ConversationID: "abc", ParticipantCount: 3},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestCreateTextConversationKeepsSuppliedDetails(t *testing.T) {
 	if body.Details.Platform != "whatsapp" {
 		t.Fatalf("platform must be filled from the input, got %q", body.Details.Platform)
 	}
-	if body.Details.ConversationID != "abc" || *body.Details.ParticipantCount != 3 {
+	if body.Details.ConversationID != "abc" || body.Details.ParticipantCount != 3 {
 		t.Fatalf("details %+v", body.Details)
 	}
 }
@@ -88,7 +88,7 @@ func TestCreateNoteDefaultsPerformedAt(t *testing.T) {
 	before := time.Now().UTC().Add(-time.Second)
 	_, err := c.Journal.CreateNote(context.Background(), NoteInput{
 		Description: "observed pattern",
-		Details:     &NoteDetails{Content: "text", NotedAt: NewTime(time.Now().UTC())},
+		Details:     map[string]any{"content": "text"},
 		Media:       []Media{{ID: "m1", MimeType: "application/pdf"}},
 	})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestCreateImportAndExport(t *testing.T) {
 
 	if _, err := c.Journal.CreateImport(ctx, ImportInput{
 		Description: "csv load",
-		Details:     &ImportDetails{Source: "partner", RecordCount: 42, ImportedAt: NewTime(time.Now().UTC())},
+		Details:     &ImportDetails{Data: map[string]any{"source": "partner", "record_count": 42}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,13 +124,13 @@ func TestCreateImportAndExport(t *testing.T) {
 		Details ImportDetails `json:"details"`
 	}
 	srv.requests[0].decode(t, &imported)
-	if imported.Type != "import" || imported.Details.RecordCount != 42 {
+	if imported.Type != "import" || imported.Details.Data["record_count"] != float64(42) {
 		t.Fatalf("got %+v", imported)
 	}
 
 	if _, err := c.Journal.CreateExport(ctx, ExportInput{
 		Description: "csv dump",
-		Details:     &ExportDetails{Destination: "partner", RecordCount: 7, ExportedAt: NewTime(time.Now().UTC())},
+		Details:     &ExportDetails{Data: map[string]any{"destination": "partner", "record_count": 7}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestCreateImportAndExport(t *testing.T) {
 		Details ExportDetails `json:"details"`
 	}
 	srv.requests[2].decode(t, &exported)
-	if exported.Type != "export" || exported.Details.RecordCount != 7 {
+	if exported.Type != "export" || exported.Details.Data["record_count"] != float64(7) {
 		t.Fatalf("got %+v", exported)
 	}
 }

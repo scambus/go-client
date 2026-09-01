@@ -333,11 +333,13 @@ type NoteInput struct {
 	IsTest                     bool
 	ExternalIdentifiers        []ExternalIdentifierInput
 	ExtractExternalIdentifiers bool
-	Details                    *NoteDetails
-	PerformedAt                Time
-	StartTime                  Time
-	EndTime                    Time
-	InProgress                 bool
+	// Note entries carry a free-form details payload; the API defines no
+	// typed shape for them.
+	Details     map[string]any
+	PerformedAt Time
+	StartTime   Time
+	EndTime     Time
+	InProgress  bool
 }
 
 func (s *JournalService) CreateNote(ctx context.Context, in NoteInput) (*JournalEntry, error) {
@@ -349,7 +351,7 @@ func (s *JournalService) CreateNote(ctx context.Context, in NoteInput) (*Journal
 		InProgress:  in.InProgress,
 	}
 	in.applyCommon(&entry)
-	if in.Details != nil {
+	if len(in.Details) > 0 {
 		entry.Details = in.Details
 	}
 	attachMedia(&entry, in.Media, Evidence{

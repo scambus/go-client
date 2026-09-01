@@ -180,7 +180,7 @@ func TestTagValueOrderZeroIsSent(t *testing.T) {
 }
 
 func TestZeroDetailTimestampsAreOmitted(t *testing.T) {
-	raw, err := json.Marshal(NoteDetails{Content: "hello"})
+	raw, err := json.Marshal(ImportDetails{Data: map[string]any{"a": 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
