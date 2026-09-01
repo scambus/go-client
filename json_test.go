@@ -1,0 +1,178 @@
+package scambus
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+)
+
+func TestTimeUnmarshalAcceptedLayouts(t *testing.T) {
+	cases := map[string]time.Time{
+		`"2025-01-15T10:30:00Z"`:        time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
+		`"2025-01-15T10:30:00.123456Z"`: time.Date(2025, 1, 15, 10, 30, 0, 123456000, time.UTC),
+		`"2025-01-15T10:30:00+02:00"`:   time.Date(2025, 1, 15, 10, 30, 0, 0, time.FixedZone("", 7200)),
+		`"2025-01-15T10:30:00"`:         time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
+		`"2025-01-15"`:                  time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+	}
+	for input, want := range cases {
+		var got Time
+		if err := json.Unmarshal([]byte(input), &got); err != nil {
+			t.Fatalf("%s: %v", input, err)
+		}
+		if !got.Equal(want) {
+			t.Fatalf("%s: got %v, want %v", input, got.Time, want)
+		}
+	}
+}
+
+func TestTimeUnmarshalEmptyValues(t *testing.T) {
+	for _, input := range []string{`null`, `""`} {
+		var got Time
+		if err := json.Unmarshal([]byte(input), &got); err != nil {
+			t.Fatalf("%s: %v", input, err)
+		}
+		if got.IsSet() {
+			t.Fatalf("%s should be unset", input)
+		}
+	}
+}
+
+func TestTimeUnmarshalRejectsGarbage(t *testing.T) {
+	var got Time
+	if err := json.Unmarshal([]byte(`"not a date"`), &got); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
+func TestTimeMarshalRoundTrip(t *testing.T) {
+	original := NewTime(time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC))
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Time
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !back.Equal(original.Time) {
+		t.Fatalf("got %v", back.Time)
+	}
+}
+
+func TestTimeMarshalZeroIsNull(t *testing.T) {
+	raw, err := json.Marshal(Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "null" {
+		t.Fatalf("got %s", raw)
+	}
+}
+
+func TestConfidenceAcceptsObjectAndNumber(t *testing.T) {
+	cases := map[string]float64{
+		`{"score":0.95}`: 0.95,
+		`0.42`:           0.42,
+		`1`:              1,
+	}
+	for input, want := range cases {
+		var got Confidence
+		if err := json.Unmarshal([]byte(input), &got); err != nil {
+			t.Fatalf("%s: %v", input, err)
+		}
+		if !got.Set || got.Score != want {
+			t.Fatalf("%s: got %+v", input, got)
+		}
+	}
+}
+
+func TestConfidenceUnsetForNullAndEmptyObject(t *testing.T) {
+	for _, input := range []string{`null`, `{}`} {
+		var got Confidence
+		if err := json.Unmarshal([]byte(input), &got); err != nil {
+			t.Fatalf("%s: %v", input, err)
+		}
+		if got.Set {
+			t.Fatalf("%s should leave Confidence unset", input)
+		}
+	}
+}
+
+func TestIdentifierDecodesWrappedConfidence(t *testing.T) {
+	raw := `{"id":"i1","type":"phone","display_value":"+12125551234","confidence":{"score":0.9},"created_at":"2025-01-15T10:30:00Z"}`
+	var got Identifier
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Confidence.Score != 0.9 {
+		t.Fatalf("got %+v", got.Confidence)
+	}
+	if !got.CreatedAt.IsSet() {
+		t.Fatal("created_at should be set")
+	}
+}
+
+func TestStreamIdentifierDecodesBareConfidence(t *testing.T) {
+	raw := `{"id":"i1","type":"email","display_value":"a@b.test","confidence":0.75}`
+	var got StreamIdentifierInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Confidence.Score != 0.75 {
+		t.Fatalf("got %+v", got.Confidence)
+	}
+}
+
+func TestReportIDFallsBackToIDKey(t *testing.T) {
+	var withReportID, withID Report
+	if err := json.Unmarshal([]byte(`{"report_id":"r1","report_type":"identifier","status":"pending"}`), &withReportID); err != nil {
+		t.Fatal(err)
+	}
+	if withReportID.ID != "r1" {
+		t.Fatalf("got %q", withReportID.ID)
+	}
+	if err := json.Unmarshal([]byte(`{"id":"r2","type":"journal_entry","status":"completed"}`), &withID); err != nil {
+		t.Fatal(err)
+	}
+	if withID.ID != "r2" || withID.ReportType != "journal_entry" {
+		t.Fatalf("got %+v", withID)
+	}
+	if !withID.IsCompleted() || withID.IsProcessing() {
+		t.Fatalf("status helpers wrong for %+v", withID)
+	}
+}
+
+func TestDecodeDetails(t *testing.T) {
+	details, err := DecodeDetails[PhoneCallDetails](map[string]any{
+		"direction":     "inbound",
+		"recording_url": "https://example.test/r.mp3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.Direction != "inbound" || details.RecordingURL != "https://example.test/r.mp3" {
+		t.Fatalf("got %+v", details)
+	}
+}
+
+func TestParseIdentifierDetailsByType(t *testing.T) {
+	got, err := ParseIdentifierDetails("phone", map[string]any{"country_code": "+1", "number": "2125551234", "is_toll_free": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, ok := got.(PhoneDetails)
+	if !ok {
+		t.Fatalf("got %T", got)
+	}
+	if phone.CountryCode != "+1" || phone.Number != "2125551234" {
+		t.Fatalf("got %+v", phone)
+	}
+
+	unknown, err := ParseIdentifierDetails("mystery", map[string]any{"a": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := unknown.(map[string]any); !ok {
+		t.Fatalf("unknown type should pass the map through, got %T", unknown)
+	}
+}
