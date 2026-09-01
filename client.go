@@ -246,7 +246,7 @@ func (c *Client) do(ctx context.Context, r request) (*http.Response, error) {
 				c.logger.Warn("retrying scambus request",
 					"status", resp.StatusCode, "method", r.method, "endpoint", r.endpoint,
 					"attempt", attempt, "delay", delay)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if sleepErr := c.wait(ctx, delay, start); sleepErr != nil {
 					return nil, sleepErr
 				}

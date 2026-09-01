@@ -3,6 +3,7 @@ package scambus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -241,7 +242,7 @@ func TestWebSocketRunStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
-	if err := ws.Run(ctx); err != context.DeadlineExceeded {
+	if err := ws.Run(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("got %v", err)
 	}
 }

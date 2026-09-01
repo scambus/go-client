@@ -84,17 +84,12 @@ func (s *ConsumeService) Subscribe(ctx context.Context, consumerKey string, opts
 	for {
 		err := s.subscribeOnce(ctx, consumerKey, &cursor, settings.IncludeTest, fn)
 		switch {
-		case err == nil, errors.Is(err, io.EOF):
-		case ctx.Err() != nil:
-			return ctx.Err()
 		case errors.Is(err, errStopSubscription):
 			return nil
-		default:
-			var apiErr *APIError
-			if errors.As(err, &apiErr) && apiErr.kind != nil && !errors.Is(err, ErrServer) && !errors.Is(err, ErrRateLimited) {
-				return err
-			}
-			if !settings.Reconnect {
+		case ctx.Err() != nil:
+			return ctx.Err()
+		case err != nil:
+			if !retryableSSEError(err) || !settings.Reconnect {
 				return err
 			}
 			s.client.logger.Warn("scambus SSE connection lost", "consumer_key", consumerKey, "error", err)
@@ -122,6 +117,16 @@ func (s *ConsumeService) Subscribe(ctx context.Context, consumerKey string, opts
 }
 
 var errStopSubscription = errors.New("scambus: subscription stopped by caller")
+
+// retryableSSEError is true for transport faults and transient server states;
+// a rejected key or a bad consumer key will not fix itself.
+func retryableSSEError(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return true
+	}
+	return errors.Is(err, ErrServer) || errors.Is(err, ErrRateLimited)
+}
 
 func (s *ConsumeService) subscribeOnce(ctx context.Context, consumerKey string, cursor *string, includeTest bool, fn func(StreamMessage) error) error {
 	q := url.Values{
@@ -176,7 +181,7 @@ func (s *ConsumeService) subscribeOnce(ctx context.Context, consumerKey string, 
 			return fmt.Errorf("scambus: SSE stream error: %s", strings.TrimSpace(string(event.Data)))
 		}
 	}
-	return io.EOF
+	return nil
 }
 
 func deliver(raw json.RawMessage, cursor *string, fn func(StreamMessage) error) error {
@@ -211,7 +216,7 @@ func parseSSE(r io.Reader) func(func(SSEEvent, error) bool) {
 			if data.Len() == 0 && event.Event == "" && event.ID == "" {
 				return true
 			}
-			event.Data = bytes.TrimSuffix(data.Bytes(), []byte("\n"))
+			event.Data = bytes.Clone(bytes.TrimSuffix(data.Bytes(), []byte("\n")))
 			ok := yield(event, nil)
 			event = SSEEvent{}
 			data.Reset()
