@@ -129,6 +129,8 @@ func (s *StreamService) Recover(ctx context.Context, streamID string, ignoreChec
 	return &out, nil
 }
 
+// RecoveryInfo returns the raw diagnostic payload; the endpoint publishes no
+// stable shape.
 func (s *StreamService) RecoveryInfo(ctx context.Context, streamID string) (map[string]any, error) {
 	var out map[string]any
 	if err := s.client.get(ctx, "/export-streams/"+streamID+"/recovery-info", nil, &out); err != nil {
@@ -143,6 +145,8 @@ type RecoveryHistoryOptions struct {
 	StreamID string
 }
 
+// RecoveryHistory returns the raw diagnostic payload; the endpoint publishes
+// no stable shape.
 func (s *StreamService) RecoveryHistory(ctx context.Context, opts *RecoveryHistoryOptions) (map[string]any, error) {
 	q := url.Values{}
 	if opts != nil {
@@ -163,6 +167,8 @@ func (s *StreamService) RecoveryHistory(ctx context.Context, opts *RecoveryHisto
 	return out, nil
 }
 
+// BackfillIdentifiers returns the raw diagnostic payload; the endpoint
+// publishes no stable shape.
 func (s *StreamService) BackfillIdentifiers(ctx context.Context, streamID, fromDate string) (map[string]any, error) {
 	q := url.Values{}
 	if fromDate != "" {

@@ -22,8 +22,8 @@ func main() {
 	entry, err := client.Journal.CreateDetection(ctx, scambus.DetectionInput{
 		Description: "Automated phishing detection",
 		Identifiers: []scambus.IdentifierLookup{
-			{Type: "phone", Value: "+12125551234", Confidence: scambus.Ptr(0.9)},
-			{Type: "email", Value: "scammer@example.com", Confidence: scambus.Ptr(0.95)},
+			{Type: scambus.IdentifierTypePhone, Value: "+12125551234", Confidence: scambus.Ptr(0.9)},
+			{Type: scambus.IdentifierTypeEmail, Value: "scammer@example.com", Confidence: scambus.Ptr(0.95)},
 		},
 		Tags: []scambus.TagLookup{
 			{TagName: "ScamType", TagValue: "Phishing"},

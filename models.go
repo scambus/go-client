@@ -1,21 +1,21 @@
 package scambus
 
 type Identifier struct {
-	ID             string           `json:"id"`
-	Type           string           `json:"type"`
-	DisplayValue   string           `json:"display_value"`
-	Confidence     Confidence       `json:"confidence"`
-	Data           map[string]any   `json:"data,omitempty"`
-	CreatedAt      Time             `json:"created_at"`
-	UpdatedAt      Time             `json:"updated_at"`
-	IsTest         bool             `json:"is_test"`
-	TagDisplay     []map[string]any `json:"tag_display,omitempty"`
-	Label          string           `json:"label,omitempty"`
-	Classification string           `json:"classification,omitempty"`
+	ID             string         `json:"id"`
+	Type           string         `json:"type"`
+	DisplayValue   string         `json:"display_value"`
+	Confidence     Confidence     `json:"confidence"`
+	Data           map[string]any `json:"data,omitempty"`
+	CreatedAt      Time           `json:"created_at"`
+	UpdatedAt      Time           `json:"updated_at"`
+	IsTest         bool           `json:"is_test"`
+	TagDisplay     []TagDisplay   `json:"tag_display,omitempty"`
+	Label          string         `json:"label,omitempty"`
+	Classification string         `json:"classification,omitempty"`
 }
 
 type IdentifierLookup struct {
-	Type        string                    `json:"type"`
+	Type        IdentifierType            `json:"type"`
 	Value       string                    `json:"value"`
 	Confidence  *float64                  `json:"confidence,omitempty"`
 	Label       string                    `json:"label,omitempty"`
@@ -68,7 +68,7 @@ type JournalEntry struct {
 	EndTime              Time                       `json:"end_time"`
 	ParentJournalEntryID string                     `json:"parent_journal_entry_id,omitempty"`
 	BatchID              string                     `json:"batch_id,omitempty"`
-	TagDisplay           []map[string]any           `json:"tag_display,omitempty"`
+	TagDisplay           []TagDisplay               `json:"tag_display,omitempty"`
 	TotalKarma           *int                       `json:"total_karma,omitempty"`
 	KarmaBreakdown       *KarmaBreakdown            `json:"karma_breakdown,omitempty"`
 	IsDraft              bool                       `json:"is_draft"`
@@ -465,6 +465,23 @@ type FileExport struct {
 	ExpiresAt     Time           `json:"expires_at"`
 	CreatedAt     Time           `json:"created_at"`
 	UpdatedAt     Time           `json:"updated_at"`
+}
+
+// TagDisplay is the rendered form of a tag on an entity, including tags
+// inherited from ancestor or descendant entries.
+type TagDisplay struct {
+	TagID            string `json:"tag_id"`
+	TagTitle         string `json:"tag_title"`
+	ValueID          string `json:"value_id,omitempty"`
+	ValueTitle       string `json:"value_title,omitempty"`
+	Display          string `json:"display"`
+	IsFlowedUp       bool   `json:"is_flowed_up"`
+	IsFlowedDown     bool   `json:"is_flowed_down"`
+	IsInherited      bool   `json:"is_inherited,omitempty"`
+	IsSystem         bool   `json:"is_system,omitempty"`
+	IsSticky         bool   `json:"is_sticky,omitempty"`
+	JournalEntryID   string `json:"journal_entry_id,omitempty"`
+	JournalEntryType string `json:"journal_entry_type,omitempty"`
 }
 
 type Pagination struct {

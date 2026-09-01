@@ -170,7 +170,7 @@ func BankAccountLookup(in BankAccountInput) (IdentifierLookup, error) {
 		return IdentifierLookup{}, err
 	}
 	return IdentifierLookup{
-		Type:       string(IdentifierTypeBankAccount),
+		Type:       IdentifierTypeBankAccount,
 		Value:      string(value),
 		Confidence: in.Confidence,
 	}, nil
@@ -238,7 +238,7 @@ func paymentTokenLookup(details PaymentTokenDetails, confidence *float64) (Ident
 		return IdentifierLookup{}, err
 	}
 	return IdentifierLookup{
-		Type:       string(IdentifierTypePaymentToken),
+		Type:       IdentifierTypePaymentToken,
 		Value:      string(value),
 		Confidence: confidence,
 	}, nil

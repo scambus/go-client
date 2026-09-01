@@ -120,8 +120,8 @@ func (s *TagService) DeleteValue(ctx context.Context, tagID, valueID string) err
 	return s.client.delete(ctx, "/tags/"+tagID+"/values/"+valueID)
 }
 
-func (s *TagService) Effective(ctx context.Context, entityType, entityID string) ([]map[string]any, error) {
-	var out []map[string]any
+func (s *TagService) Effective(ctx context.Context, entityType, entityID string) ([]TagDisplay, error) {
+	var out []TagDisplay
 	if err := s.client.get(ctx, "/tags/effective/"+entityType+"/"+entityID, nil, &out); err != nil {
 		return nil, err
 	}
