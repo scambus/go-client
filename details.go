@@ -47,7 +47,7 @@ type ConversationContinuationDetails struct {
 type ConversationMessage struct {
 	Index                   int                    `json:"index"`
 	MessageID               string                 `json:"message_id"`
-	Timestamp               Time                   `json:"timestamp"`
+	Timestamp               Time                   `json:"timestamp,omitzero"`
 	Body                    string                 `json:"body"`
 	IsOutgoing              bool                   `json:"is_outgoing"`
 	MessageType             string                 `json:"message_type,omitempty"`
@@ -85,7 +85,7 @@ type MessageAttachment struct {
 }
 
 type CustodyEvent struct {
-	Timestamp Time   `json:"timestamp"`
+	Timestamp Time   `json:"timestamp,omitzero"`
 	Event     string `json:"event"`
 	Method    string `json:"method"`
 	Actor     string `json:"actor,omitempty"`
@@ -102,7 +102,7 @@ type DetectionDetails struct {
 type ImportDetails struct {
 	Source      string `json:"source"`
 	RecordCount int    `json:"record_count"`
-	ImportedAt  Time   `json:"imported_at"`
+	ImportedAt  Time   `json:"imported_at,omitzero"`
 	FileName    string `json:"file_name,omitempty"`
 	Notes       string `json:"notes,omitempty"`
 }
@@ -110,7 +110,7 @@ type ImportDetails struct {
 type ExportDetails struct {
 	Destination string `json:"destination"`
 	RecordCount int    `json:"record_count"`
-	ExportedAt  Time   `json:"exported_at"`
+	ExportedAt  Time   `json:"exported_at,omitzero"`
 	FileName    string `json:"file_name,omitempty"`
 	Notes       string `json:"notes,omitempty"`
 }
@@ -118,7 +118,7 @@ type ExportDetails struct {
 type ContactDetails struct {
 	Method      string `json:"method"`
 	Direction   string `json:"direction"`
-	ContactedAt Time   `json:"contacted_at"`
+	ContactedAt Time   `json:"contacted_at,omitzero"`
 	Duration    *int   `json:"duration,omitempty"`
 	Outcome     string `json:"outcome,omitempty"`
 	Notes       string `json:"notes,omitempty"`
@@ -126,7 +126,7 @@ type ContactDetails struct {
 
 type ResearchDetails struct {
 	Topic        string   `json:"topic"`
-	ResearchedAt Time     `json:"researched_at"`
+	ResearchedAt Time     `json:"researched_at,omitzero"`
 	Sources      []string `json:"sources,omitempty"`
 	Findings     string   `json:"findings,omitempty"`
 	Confidence   *float64 `json:"confidence,omitempty"`
@@ -135,34 +135,34 @@ type ResearchDetails struct {
 type AnalysisDetails struct {
 	AnalysisType string         `json:"analysis_type"`
 	Findings     string         `json:"findings"`
-	AnalyzedAt   Time           `json:"analyzed_at"`
+	AnalyzedAt   Time           `json:"analyzed_at,omitzero"`
 	Confidence   *float64       `json:"confidence,omitempty"`
 	Metrics      map[string]any `json:"metrics,omitempty"`
 }
 
 type ActionDetails struct {
 	ActionType string `json:"action_type"`
-	TakenAt    Time   `json:"taken_at"`
+	TakenAt    Time   `json:"taken_at,omitzero"`
 	Outcome    string `json:"outcome,omitempty"`
 	Notes      string `json:"notes,omitempty"`
 }
 
 type ObservationDetails struct {
 	ObservationType string `json:"observation_type"`
-	ObservedAt      Time   `json:"observed_at"`
+	ObservedAt      Time   `json:"observed_at,omitzero"`
 	Data            string `json:"data"`
 	Significance    string `json:"significance,omitempty"`
 }
 
 type NoteDetails struct {
 	Content  string `json:"content"`
-	NotedAt  Time   `json:"noted_at"`
+	NotedAt  Time   `json:"noted_at,omitzero"`
 	Category string `json:"category,omitempty"`
 }
 
 type UpdateDetails struct {
 	UpdateType    string `json:"update_type"`
-	UpdatedAt     Time   `json:"updated_at"`
+	UpdatedAt     Time   `json:"updated_at,omitzero"`
 	Changes       string `json:"changes"`
 	PreviousValue string `json:"previous_value,omitempty"`
 	NewValue      string `json:"new_value,omitempty"`
@@ -170,8 +170,8 @@ type UpdateDetails struct {
 
 type ActivityCompleteDetails struct {
 	CompletionReason string `json:"completion_reason"`
-	StartTime        Time   `json:"start_time"`
-	EndTime          Time   `json:"end_time"`
+	StartTime        Time   `json:"start_time,omitzero"`
+	EndTime          Time   `json:"end_time,omitzero"`
 	DurationSeconds  int    `json:"duration_seconds"`
 }
 
@@ -201,7 +201,7 @@ type RedactionDetails struct {
 	IdentifierType string   `json:"identifier_type"`
 	OriginalHash   string   `json:"original_hash"`
 	RedactedFields []string `json:"redacted_fields"`
-	RedactedAt     Time     `json:"redacted_at"`
+	RedactedAt     Time     `json:"redacted_at,omitzero"`
 	Reason         string   `json:"reason,omitempty"`
 }
 

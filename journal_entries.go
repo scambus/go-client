@@ -2,6 +2,7 @@ package scambus
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -107,7 +108,11 @@ type PhoneCallInput struct {
 	TranscriptURL              string
 	Transcript                 []ConversationMessage
 	InProgress                 bool
-	AIExtract                  bool
+
+	// AIExtract defaults to on when a transcript is attached. Set
+	// DisableAIExtract to keep it off.
+	AIExtract        bool
+	DisableAIExtract bool
 }
 
 func (s *JournalService) CreatePhoneCall(ctx context.Context, in PhoneCallInput) (*JournalEntry, error) {
@@ -117,7 +122,7 @@ func (s *JournalService) CreatePhoneCall(ctx context.Context, in PhoneCallInput)
 		StartTime:   in.StartTime,
 		EndTime:     in.EndTime,
 		InProgress:  in.InProgress,
-		AIExtract:   in.AIExtract || len(in.Transcript) > 0,
+		AIExtract:   !in.DisableAIExtract && (in.AIExtract || len(in.Transcript) > 0),
 		Details: PhoneCallDetails{
 			Direction:     in.Direction,
 			RecordingURL:  in.RecordingURL,
@@ -271,6 +276,9 @@ func (s *JournalService) CreateConversationContinuation(ctx context.Context, in 
 	if len(in.Messages) == 0 {
 		return nil, errNoMessages
 	}
+	if in.ParentJournalEntryID == "" {
+		return nil, fmt.Errorf("%w: a continuation needs a parent journal entry id", ErrValidation)
+	}
 
 	start, end := in.Messages[0].Timestamp, in.Messages[0].Timestamp
 	for _, m := range in.Messages[1:] {
@@ -301,7 +309,6 @@ func (s *JournalService) CreateConversationContinuation(ctx context.Context, in 
 	}
 	in.applyCommon(&entry)
 	entry.Description = description
-	entry.ParentJournalEntryID = in.ParentEntryID
 
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        "screenshot",
@@ -378,6 +385,12 @@ func (s *JournalService) CreateImport(ctx context.Context, in ImportInput) (*Jou
 	if in.Details != nil {
 		entry.Details = in.Details
 	}
+	attachMedia(&entry, in.Media, Evidence{
+		Type:        "document",
+		Description: "Evidence for import: " + in.Description,
+		Source:      "Import Attachment",
+		CollectedAt: nowOr(in.PerformedAt),
+	})
 	return s.Create(ctx, entry)
 }
 
@@ -405,6 +418,12 @@ func (s *JournalService) CreateExport(ctx context.Context, in ExportInput) (*Jou
 	if in.Details != nil {
 		entry.Details = in.Details
 	}
+	attachMedia(&entry, in.Media, Evidence{
+		Type:        "document",
+		Description: "Evidence for export: " + in.Description,
+		Source:      "Export Attachment",
+		CollectedAt: nowOr(in.PerformedAt),
+	})
 	return s.Create(ctx, entry)
 }
 

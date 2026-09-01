@@ -44,7 +44,8 @@ type CreateTagInput struct {
 type CreateTagValue struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
-	Order       int    `json:"order,omitempty"`
+	// Order 0 is the first position, so it is always sent.
+	Order int `json:"order"`
 }
 
 func (s *TagService) Create(ctx context.Context, in CreateTagInput) (*Tag, error) {

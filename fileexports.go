@@ -103,17 +103,29 @@ func (s *FileExportService) Download(ctx context.Context, exportID string, w io.
 
 func (s *FileExportService) DownloadToFile(ctx context.Context, exportID, path string) error {
 	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
 	}
-	f, err := os.Create(path)
+	// Write to a sibling temp file so a failed download cannot truncate a
+	// good one that is already there.
+	f, err := os.CreateTemp(filepath.Dir(path), ".scambus-download-*")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	tmp := f.Name()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}()
+	if err := f.Chmod(0o600); err != nil {
+		return err
+	}
 	if _, err := s.Download(ctx, exportID, f); err != nil {
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

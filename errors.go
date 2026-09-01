@@ -34,8 +34,6 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("scambus: %d %s", e.StatusCode, e.Message)
 }
 
-func (e *APIError) Is(target error) bool { return e.kind != nil && e.kind == target }
-
 func (e *APIError) Unwrap() error { return e.kind }
 
 func kindForStatus(status int) error {

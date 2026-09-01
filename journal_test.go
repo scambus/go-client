@@ -330,7 +330,7 @@ func TestCreateConversationContinuationDerivesTimeSpan(t *testing.T) {
 
 	base := time.Date(2025, 4, 1, 12, 0, 0, 0, time.UTC)
 	_, err := c.Journal.CreateConversationContinuation(context.Background(), ConversationContinuationInput{
-		ParentEntryID: "e1",
+		ParentJournalEntryID: "e1",
 		Messages: []ConversationMessage{
 			{Index: 1, MessageID: "b", Timestamp: NewTime(base.Add(time.Hour)), Body: "later"},
 			{Index: 0, MessageID: "a", Timestamp: NewTime(base), Body: "earlier"},
@@ -364,7 +364,7 @@ func TestCreateConversationContinuationDerivesTimeSpan(t *testing.T) {
 func TestCreateConversationContinuationRejectsEmptyMessages(t *testing.T) {
 	srv := createEntryServer(t, map[string]any{"id": "e1"}, map[string]any{"id": "e1"})
 	c := srv.client(t)
-	_, err := c.Journal.CreateConversationContinuation(context.Background(), ConversationContinuationInput{ParentEntryID: "e1"})
+	_, err := c.Journal.CreateConversationContinuation(context.Background(), ConversationContinuationInput{ParentJournalEntryID: "e1"})
 	if err == nil {
 		t.Fatal("want an error")
 	}

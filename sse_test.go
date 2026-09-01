@@ -188,11 +188,13 @@ func TestSubscribeReconnectsResumingFromLastCursor(t *testing.T) {
 	var ids []string
 	err := c.Consume.Subscribe(context.Background(), "ck", &SubscribeOptions{
 		Reconnect:      true,
-		MaxReconnects:  1,
 		ReconnectDelay: time.Millisecond,
 	}, func(m StreamMessage) error {
 		msg, _ := m.Identifier()
 		ids = append(ids, msg.IdentifierID)
+		if len(ids) == 2 {
+			return ErrStopSubscription
+		}
 		return nil
 	})
 	if err != nil {

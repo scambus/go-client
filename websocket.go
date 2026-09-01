@@ -35,10 +35,23 @@ type WSClient struct {
 	maxReconnects  int
 	reconnectDelay time.Duration
 
-	mu        sync.Mutex
-	conn      *websocket.Conn
-	handlers  map[string]map[string][]WSHandler
-	connected chan struct{}
+	mu         sync.Mutex
+	conn       *websocket.Conn
+	closed     bool
+	nextID     uint64
+	handlers   map[string]map[string][]registeredHandler
+	subscribed map[string]streamSubscription
+	channels   []string
+}
+
+type registeredHandler struct {
+	id uint64
+	fn WSHandler
+}
+
+type streamSubscription struct {
+	cursor      string
+	includeTest bool
 }
 
 type WSOption func(*WSClient)
@@ -63,8 +76,8 @@ func (c *Client) NewWebSocket(opts ...WSOption) (*WSClient, error) {
 		logger:         c.logger,
 		maxReconnects:  10,
 		reconnectDelay: time.Second,
-		handlers:       map[string]map[string][]WSHandler{},
-		connected:      make(chan struct{}),
+		handlers:       map[string]map[string][]registeredHandler{},
+		subscribed:     map[string]streamSubscription{},
 	}
 	for _, opt := range opts {
 		opt(ws)
@@ -97,17 +110,21 @@ func (w *WSClient) On(channel, event string, handler WSHandler) func() {
 	defer w.mu.Unlock()
 
 	if w.handlers[channel] == nil {
-		w.handlers[channel] = map[string][]WSHandler{}
+		w.handlers[channel] = map[string][]registeredHandler{}
 	}
-	index := len(w.handlers[channel][event])
-	w.handlers[channel][event] = append(w.handlers[channel][event], handler)
+	w.nextID++
+	id := w.nextID
+	w.handlers[channel][event] = append(w.handlers[channel][event], registeredHandler{id: id, fn: handler})
 
 	return func() {
 		w.mu.Lock()
 		defer w.mu.Unlock()
 		list := w.handlers[channel][event]
-		if index < len(list) {
-			w.handlers[channel][event] = append(list[:index], list[index+1:]...)
+		for i, h := range list {
+			if h.id == id {
+				w.handlers[channel][event] = append(list[:i], list[i+1:]...)
+				return
+			}
 		}
 	}
 }
@@ -125,13 +142,40 @@ func (w *WSClient) Connect(ctx context.Context) error {
 	conn.SetReadLimit(32 * 1024 * 1024)
 
 	w.mu.Lock()
+	previous := w.conn
 	w.conn = conn
-	select {
-	case <-w.connected:
-	default:
-		close(w.connected)
+	w.mu.Unlock()
+
+	if previous != nil {
+		_ = previous.Close(websocket.StatusNormalClosure, "replaced")
+	}
+	return w.resubscribe(ctx)
+}
+
+// resubscribe replays every stream subscription, because the server holds
+// them per connection and a reconnect starts with none.
+func (w *WSClient) resubscribe(ctx context.Context) error {
+	w.mu.Lock()
+	pending := make(map[string]streamSubscription, len(w.subscribed))
+	for id, sub := range w.subscribed {
+		pending[id] = sub
 	}
 	w.mu.Unlock()
+
+	w.mu.Lock()
+	channels := append([]string(nil), w.channels...)
+	w.mu.Unlock()
+
+	for streamID, sub := range pending {
+		if err := w.sendSubscribe(ctx, streamID, sub); err != nil {
+			return err
+		}
+	}
+	for _, channel := range channels {
+		if err := w.send(ctx, map[string]any{"action": "subscribe", "channel": channel}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -139,11 +183,18 @@ func (w *WSClient) Close() error {
 	w.mu.Lock()
 	conn := w.conn
 	w.conn = nil
+	w.closed = true
 	w.mu.Unlock()
 	if conn == nil {
 		return nil
 	}
 	return conn.Close(websocket.StatusNormalClosure, "")
+}
+
+func (w *WSClient) isClosed() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.closed
 }
 
 // Run reads messages until ctx is cancelled, reconnecting with backoff.
@@ -152,6 +203,10 @@ func (w *WSClient) Run(ctx context.Context) error {
 	delay := w.reconnectDelay
 
 	for {
+		if w.isClosed() {
+			return nil
+		}
+
 		w.mu.Lock()
 		conn := w.conn
 		w.mu.Unlock()
@@ -161,7 +216,7 @@ func (w *WSClient) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				if attempts >= w.maxReconnects {
+				if w.maxReconnects >= 0 && attempts >= w.maxReconnects {
 					return err
 				}
 				attempts++
@@ -181,7 +236,8 @@ func (w *WSClient) Run(ctx context.Context) error {
 		}
 
 		status := websocket.CloseStatus(err)
-		if status == websocket.StatusNormalClosure {
+		if status == websocket.StatusNormalClosure || w.isClosed() {
+			_ = w.Close()
 			return nil
 		}
 
@@ -199,7 +255,7 @@ func (w *WSClient) Run(ctx context.Context) error {
 			continue
 		}
 
-		if attempts >= w.maxReconnects {
+		if w.maxReconnects >= 0 && attempts >= w.maxReconnects {
 			return err
 		}
 		attempts++
@@ -232,15 +288,15 @@ func (w *WSClient) readLoop(ctx context.Context, conn *websocket.Conn) error {
 func (w *WSClient) dispatch(msg WSMessage) {
 	w.mu.Lock()
 	byEvent := w.handlers[msg.Channel]
-	matched := append([]WSHandler(nil), byEvent[msg.Event]...)
-	wildcard := append([]WSHandler(nil), byEvent["*"]...)
+	matched := append([]registeredHandler(nil), byEvent[msg.Event]...)
+	wildcard := append([]registeredHandler(nil), byEvent["*"]...)
 	w.mu.Unlock()
 
 	for _, handler := range matched {
-		handler(msg)
+		handler.fn(msg)
 	}
 	for _, handler := range wildcard {
-		handler(msg)
+		handler.fn(msg)
 	}
 }
 
@@ -262,22 +318,38 @@ func (w *WSClient) SubscribeStream(ctx context.Context, streamID, cursor string,
 	if cursor == "" {
 		cursor = CursorEnd
 	}
+	sub := streamSubscription{cursor: cursor, includeTest: includeTest}
+
+	w.mu.Lock()
+	w.subscribed[streamID] = sub
+	w.mu.Unlock()
+
+	return w.sendSubscribe(ctx, streamID, sub)
+}
+
+func (w *WSClient) sendSubscribe(ctx context.Context, streamID string, sub streamSubscription) error {
 	return w.send(ctx, map[string]any{
 		"action":       "subscribe",
 		"channel":      "stream:" + streamID,
-		"cursor":       cursor,
-		"include_test": includeTest,
+		"cursor":       sub.cursor,
+		"include_test": sub.includeTest,
 	})
 }
 
 func (w *WSClient) UnsubscribeStream(ctx context.Context, streamID string) error {
+	w.mu.Lock()
+	delete(w.subscribed, streamID)
+	w.mu.Unlock()
+
 	return w.send(ctx, map[string]any{
 		"action":  "unsubscribe",
 		"channel": "stream:" + streamID,
 	})
 }
 
-// ListenNotifications connects and runs until ctx is cancelled.
+// ListenNotifications subscribes to the notifications channel and runs until
+// ctx is cancelled. The server subscribes nothing on connect, so the frame
+// has to be sent explicitly.
 func (w *WSClient) ListenNotifications(ctx context.Context, fn func(Notification)) error {
 	w.On("notifications", "notification", func(msg WSMessage) {
 		var n Notification
@@ -287,7 +359,23 @@ func (w *WSClient) ListenNotifications(ctx context.Context, fn func(Notification
 		}
 		fn(n)
 	})
+
+	if err := w.Connect(ctx); err != nil {
+		return err
+	}
+	if err := w.SubscribeChannel(ctx, "notifications"); err != nil {
+		return err
+	}
 	return w.Run(ctx)
+}
+
+// SubscribeChannel subscribes to a non-stream channel and replays the
+// subscription after a reconnect.
+func (w *WSClient) SubscribeChannel(ctx context.Context, channel string) error {
+	w.mu.Lock()
+	w.channels = append(w.channels, channel)
+	w.mu.Unlock()
+	return w.send(ctx, map[string]any{"action": "subscribe", "channel": channel})
 }
 
 // ListenStream connects, subscribes, and runs until ctx is cancelled.
@@ -297,6 +385,14 @@ func (w *WSClient) ListenStream(ctx context.Context, streamID, cursor string, in
 			Cursor string `json:"cursor"`
 		}
 		_ = json.Unmarshal(msg.Data, &envelope)
+		if envelope.Cursor != "" {
+			w.mu.Lock()
+			if sub, ok := w.subscribed[streamID]; ok {
+				sub.cursor = envelope.Cursor
+				w.subscribed[streamID] = sub
+			}
+			w.mu.Unlock()
+		}
 		fn(StreamMessage{Cursor: envelope.Cursor, Raw: msg.Data})
 	})
 

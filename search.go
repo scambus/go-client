@@ -60,7 +60,7 @@ func (s *SearchService) IdentifiersAll(ctx context.Context, in SearchIdentifiers
 				return err
 			}
 		}
-		if !page.HasMore || page.NextCursor == "" {
+		if !page.HasMore || page.NextCursor == "" || page.NextCursor == in.Cursor {
 			return nil
 		}
 		in.Cursor = page.NextCursor

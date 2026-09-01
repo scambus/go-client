@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -222,7 +223,7 @@ func TestWebSocketSendWithoutConnectionFails(t *testing.T) {
 }
 
 func TestWebSocketUnsubscribeHandlerStopsDelivery(t *testing.T) {
-	ws := &WSClient{handlers: map[string]map[string][]WSHandler{}}
+	ws := &WSClient{handlers: map[string]map[string][]registeredHandler{}}
 	calls := 0
 	off := ws.On("chan", "event", func(WSMessage) { calls++ })
 
@@ -232,6 +233,25 @@ func TestWebSocketUnsubscribeHandlerStopsDelivery(t *testing.T) {
 
 	if calls != 1 {
 		t.Fatalf("got %d calls", calls)
+	}
+}
+
+// Unregistering out of order must remove the handler that was registered,
+// not whichever one now sits at the same index.
+func TestWebSocketUnregisterIsPositionIndependent(t *testing.T) {
+	ws := &WSClient{handlers: map[string]map[string][]registeredHandler{}}
+
+	var fired []string
+	offA := ws.On("c", "e", func(WSMessage) { fired = append(fired, "A") })
+	ws.On("c", "e", func(WSMessage) { fired = append(fired, "B") })
+	offC := ws.On("c", "e", func(WSMessage) { fired = append(fired, "C") })
+
+	offA()
+	offC()
+	ws.dispatch(WSMessage{Channel: "c", Event: "e"})
+
+	if len(fired) != 1 || fired[0] != "B" {
+		t.Fatalf("wrong handler removed: got %v, want [B]", fired)
 	}
 }
 
@@ -365,5 +385,119 @@ func TestWebSocketUnsubscribeStream(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("no unsubscribe message received")
+	}
+}
+
+func TestWebSocketResubscribesAfterReconnect(t *testing.T) {
+	var subscribes atomic.Int32
+	var cursors []string
+	var mu sync.Mutex
+	connections := 0
+
+	srv := newWSServer(t, func(ctx context.Context, conn *websocket.Conn) {
+		mu.Lock()
+		connections++
+		first := connections == 1
+		mu.Unlock()
+
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		var action map[string]any
+		json.Unmarshal(data, &action)
+		if action["action"] == "subscribe" {
+			subscribes.Add(1)
+			mu.Lock()
+			cursors = append(cursors, action["cursor"].(string))
+			mu.Unlock()
+		}
+
+		conn.Write(ctx, websocket.MessageText,
+			[]byte(`{"type":"event","channel":"stream:s1","event":"message","data":{"identifier_id":"i1","cursor":"1-7"}}`))
+
+		if first {
+			conn.Close(websocket.StatusInternalError, "drop")
+			return
+		}
+		drain(ctx, conn)
+	})
+
+	ws := wsClient(t, srv.URL, WithWSReconnectDelay(time.Millisecond))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	received := make(chan struct{}, 8)
+	go ws.ListenStream(ctx, "s1", CursorEnd, false, func(StreamMessage) { received <- struct{}{} })
+
+	for range 2 {
+		select {
+		case <-received:
+		case <-ctx.Done():
+			t.Fatalf("only %d subscribe frames sent; the stream went deaf after reconnect", subscribes.Load())
+		}
+	}
+
+	if subscribes.Load() < 2 {
+		t.Fatalf("reconnect must replay the subscription: %d frames", subscribes.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(cursors) < 2 || cursors[1] != "1-7" {
+		t.Fatalf("reconnect must resume from the last cursor, got %v", cursors)
+	}
+}
+
+func TestWebSocketCloseStopsRun(t *testing.T) {
+	srv := newWSServer(t, func(ctx context.Context, conn *websocket.Conn) { drain(ctx, conn) })
+	ws := wsClient(t, srv.URL, WithWSReconnectDelay(time.Millisecond))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := ws.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- ws.Run(ctx) }()
+
+	time.Sleep(50 * time.Millisecond)
+	ws.Close()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close should end Run cleanly, got %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("Close did not stop Run; it reconnected instead")
+	}
+}
+
+func TestListenNotificationsSubscribes(t *testing.T) {
+	subscribed := make(chan string, 1)
+	srv := newWSServer(t, func(ctx context.Context, conn *websocket.Conn) {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		var action map[string]any
+		json.Unmarshal(data, &action)
+		subscribed <- action["channel"].(string)
+		drain(ctx, conn)
+	})
+	ws := wsClient(t, srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go ws.ListenNotifications(ctx, func(Notification) {})
+
+	select {
+	case channel := <-subscribed:
+		if channel != "notifications" {
+			t.Fatalf("channel %q", channel)
+		}
+	case <-ctx.Done():
+		t.Fatal("no subscribe frame sent; notifications would never arrive")
 	}
 }

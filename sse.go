@@ -8,12 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 )
+
+const maxSSEEvent = 8 << 20
 
 type SSEEvent struct {
 	Event string
@@ -82,7 +85,12 @@ func (s *ConsumeService) Subscribe(ctx context.Context, consumerKey string, opts
 	delay := settings.ReconnectDelay
 
 	for {
+		before := cursor
 		err := s.subscribeOnce(ctx, consumerKey, &cursor, settings.IncludeTest, fn)
+		if cursor != before {
+			// The stream made progress, so this is not a failing retry chain.
+			attempts, delay = 0, settings.ReconnectDelay
+		}
 		switch {
 		case errors.Is(err, errStopSubscription):
 			return nil
@@ -99,6 +107,9 @@ func (s *ConsumeService) Subscribe(ctx context.Context, consumerKey string, opts
 			return err
 		}
 		if settings.MaxReconnects >= 0 && attempts >= settings.MaxReconnects {
+			if err == nil {
+				return fmt.Errorf("scambus: stream %s gave up after %d reconnects", consumerKey, attempts)
+			}
 			return err
 		}
 		attempts++
@@ -121,6 +132,11 @@ var errStopSubscription = errors.New("scambus: subscription stopped by caller")
 // retryableSSEError is true for transport faults and transient server states;
 // a rejected key or a bad consumer key will not fix itself.
 func retryableSSEError(err error) bool {
+	// A single event larger than the scanner buffer will fail identically on
+	// every reconnect, and the cursor cannot advance past it.
+	if errors.Is(err, bufio.ErrTooLong) {
+		return false
+	}
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		return true
@@ -201,10 +217,10 @@ func deliver(raw json.RawMessage, cursor *string, fn func(StreamMessage) error) 
 // ErrStopSubscription ends a Subscribe loop cleanly when returned by its callback.
 var ErrStopSubscription = errors.New("scambus: stop subscription")
 
-func parseSSE(r io.Reader) func(func(SSEEvent, error) bool) {
+func parseSSE(r io.Reader) iter.Seq2[SSEEvent, error] {
 	return func(yield func(SSEEvent, error) bool) {
 		scanner := bufio.NewScanner(r)
-		scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		scanner.Buffer(make([]byte, 0, 64*1024), maxSSEEvent)
 
 		var event SSEEvent
 		var data bytes.Buffer
@@ -245,6 +261,9 @@ func parseSSE(r io.Reader) func(func(SSEEvent, error) bool) {
 			}
 		}
 		if err := scanner.Err(); err != nil {
+			if errors.Is(err, bufio.ErrTooLong) {
+				err = fmt.Errorf("scambus: SSE event exceeds %d bytes: %w", maxSSEEvent, err)
+			}
 			yield(SSEEvent{}, err)
 			return
 		}

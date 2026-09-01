@@ -88,11 +88,12 @@ func (in CreateEntryInput) body() createEntryBody {
 	}
 
 	switch {
-	case in.StartTime.IsSet() && in.InProgress:
-	case in.StartTime.IsSet() && !in.EndTime.IsSet():
-		b.EndTime = in.StartTime
-	default:
+	case in.EndTime.IsSet():
 		b.EndTime = in.EndTime
+	case in.InProgress:
+		// An open activity carries no end time.
+	case in.StartTime.IsSet():
+		b.EndTime = in.StartTime
 	}
 	return b
 }
@@ -110,7 +111,15 @@ func (s *JournalService) Create(ctx context.Context, in CreateEntryInput) (*Jour
 
 	entry, err := s.Get(ctx, created.ID)
 	if err != nil {
-		return nil, err
+		// The entry exists; only the reload failed. Hand back the id so the
+		// caller is not left without a handle on what it just wrote.
+		return &JournalEntry{
+			ID:                   created.ID,
+			Type:                 string(in.Type),
+			Description:          in.Description,
+			FailedIdentifiers:    created.FailedIdentifiers,
+			ExtractedIdentifiers: created.ExtractedIdentifiers,
+		}, fmt.Errorf("scambus: created journal entry %s but could not load it: %w", created.ID, err)
 	}
 	entry.FailedIdentifiers = created.FailedIdentifiers
 	entry.ExtractedIdentifiers = created.ExtractedIdentifiers
@@ -213,12 +222,13 @@ type QueryEntriesResult struct {
 	EstimatedTotal *int           `json:"estimatedTotal"`
 }
 
+// queryEntriesBody must not redeclare any JSON name that FilterCriteria
+// already carries: Go resolves the collision by depth, the outer field wins,
+// and the caller's filter value is dropped without a word.
 type queryEntriesBody struct {
 	*FilterCriteria
 	OrderBy              string `json:"order_by,omitempty"`
 	OrderDesc            bool   `json:"order_desc"`
-	IncludeIdentifiers   bool   `json:"include_identifiers"`
-	IncludeEvidence      bool   `json:"include_evidence"`
 	IncludeOriginator    bool   `json:"include_originator,omitempty"`
 	IncludeChildren      bool   `json:"include_children,omitempty"`
 	Cursor               string `json:"cursor,omitempty"`
@@ -227,9 +237,15 @@ type queryEntriesBody struct {
 }
 
 func (s *JournalService) Query(ctx context.Context, in QueryEntriesInput) (*QueryEntriesResult, error) {
-	filter := in.Filter
-	if filter == nil {
-		filter = &FilterCriteria{}
+	filter := FilterCriteria{}
+	if in.Filter != nil {
+		filter = *in.Filter
+	}
+	if in.IncludeIdentifiers {
+		filter.IncludeIdentifiers = Ptr(true)
+	}
+	if in.IncludeEvidence {
+		filter.IncludeEvidence = Ptr(true)
 	}
 	orderBy := in.OrderBy
 	if orderBy == "" {
@@ -237,11 +253,9 @@ func (s *JournalService) Query(ctx context.Context, in QueryEntriesInput) (*Quer
 	}
 
 	body := queryEntriesBody{
-		FilterCriteria:       filter,
+		FilterCriteria:       &filter,
 		OrderBy:              orderBy,
 		OrderDesc:            in.OrderDesc,
-		IncludeIdentifiers:   in.IncludeIdentifiers,
-		IncludeEvidence:      in.IncludeEvidence,
 		IncludeOriginator:    in.IncludeOriginator,
 		IncludeChildren:      in.IncludeChildren,
 		Cursor:               in.Cursor,
@@ -268,7 +282,7 @@ func (s *JournalService) QueryAll(ctx context.Context, in QueryEntriesInput, fn 
 				return err
 			}
 		}
-		if !page.HasMore || page.NextCursor == "" {
+		if !page.HasMore || page.NextCursor == "" || page.NextCursor == in.Cursor {
 			return nil
 		}
 		in.Cursor = page.NextCursor
@@ -302,6 +316,12 @@ func (s *JournalService) CompleteActivity(ctx context.Context, parentID string, 
 		description = "Activity completed (" + reason + ")"
 	}
 
+	duration := endTime.Sub(parent.StartTime.Time)
+	if duration < 0 {
+		return nil, fmt.Errorf("%w: end time %s precedes the entry's start time %s",
+			ErrValidation, endTime.Format(time.RFC3339), parent.StartTime.Format(time.RFC3339))
+	}
+
 	return s.Create(ctx, CreateEntryInput{
 		Type:                 EntryTypeActivityComplete,
 		Description:          description,
@@ -310,7 +330,7 @@ func (s *JournalService) CompleteActivity(ctx context.Context, parentID string, 
 			CompletionReason: reason,
 			StartTime:        parent.StartTime,
 			EndTime:          endTime,
-			DurationSeconds:  int(endTime.Sub(parent.StartTime.Time).Seconds()),
+			DurationSeconds:  int(duration.Seconds()),
 		},
 	})
 }
