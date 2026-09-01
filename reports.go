@@ -110,7 +110,7 @@ func (s *ReportService) Wait(ctx context.Context, reportID string, pollInterval 
 }
 
 func (s *ReportService) Download(ctx context.Context, reportID string, w io.Writer) (int64, error) {
-	resp, err := s.client.do(ctx, request{method: http.MethodGet, endpoint: "/reports/" + reportID + "/download"})
+	resp, err := s.client.do(ctx, request{method: http.MethodGet, endpoint: "/reports/" + reportID + "/download", stream: true})
 	if err != nil {
 		return 0, err
 	}

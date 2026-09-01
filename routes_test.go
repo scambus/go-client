@@ -443,11 +443,35 @@ func TestOptionsApplyToClient(t *testing.T) {
 	if c.httpClient != httpClient {
 		t.Fatal("WithHTTPClient did not take effect")
 	}
-	if c.httpClient.Timeout != 7*time.Second {
-		t.Fatalf("timeout %v", c.httpClient.Timeout)
+	if c.timeout != 7*time.Second {
+		t.Fatalf("timeout %v", c.timeout)
+	}
+	if httpClient.Timeout != 0 {
+		t.Fatalf("WithTimeout must not mutate a caller-owned client, got %v", httpClient.Timeout)
 	}
 	if c.maxRetries != 3 || c.retryMaxTime != time.Minute {
 		t.Fatalf("retry settings %d %v", c.maxRetries, c.retryMaxTime)
+	}
+}
+
+func TestWithTimeoutIsOrderIndependent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	shared := &http.Client{Timeout: 90 * time.Second}
+
+	for _, opts := range [][]Option{
+		{WithHTTPClient(shared), WithTimeout(5 * time.Second)},
+		{WithTimeout(5 * time.Second), WithHTTPClient(shared)},
+	} {
+		c, err := New(append([]Option{WithAPIURL("https://example.test/api"), WithToken("t")}, opts...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.timeout != 5*time.Second {
+			t.Fatalf("timeout %v", c.timeout)
+		}
+		if shared.Timeout != 90*time.Second {
+			t.Fatalf("caller client was mutated: %v", shared.Timeout)
+		}
 	}
 }
 

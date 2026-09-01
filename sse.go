@@ -138,17 +138,14 @@ func (s *ConsumeService) subscribeOnce(ctx context.Context, consumerKey string, 
 		endpoint: "/consume/" + consumerKey + "/stream",
 		query:    q,
 		accept:   "text/event-stream",
+		stream:   true,
 	})
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Cache-Control", "no-cache")
 
-	// The stream is long-lived; the shared client timeout would cut it off.
-	httpClient := *s.client.httpClient
-	httpClient.Timeout = 0
-
-	resp, err := httpClient.Do(req)
+	resp, err := s.client.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

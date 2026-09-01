@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 )
@@ -113,7 +114,9 @@ func (s *QueueService) ReadStream(ctx context.Context, queueID string, opts *Rea
 		}
 	}
 	var out QueueStreamResponse
-	if err := s.client.get(ctx, "/queues/"+queueID+"/stream", q, &out); err != nil {
+	if err := s.client.call(ctx, request{
+		method: http.MethodGet, endpoint: "/queues/" + queueID + "/stream", query: q, stream: true,
+	}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

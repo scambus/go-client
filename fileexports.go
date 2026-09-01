@@ -65,7 +65,7 @@ func (s *FileExportService) Delete(ctx context.Context, exportID string) error {
 }
 
 func (s *FileExportService) Download(ctx context.Context, exportID string, w io.Writer) (int64, error) {
-	resp, err := s.client.do(ctx, request{method: http.MethodGet, endpoint: "/file-exports/" + exportID + "/download"})
+	resp, err := s.client.do(ctx, request{method: http.MethodGet, endpoint: "/file-exports/" + exportID + "/download", stream: true})
 	if err != nil {
 		return 0, err
 	}

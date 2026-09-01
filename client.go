@@ -26,7 +26,20 @@ const (
 	retryThrottleBase = 2 * time.Second
 )
 
-var retryableStatus = map[int]bool{408: true, 429: true, 500: true, 502: true, 503: true, 504: true}
+// 408 and 429 mean the server did not process the request, so any method may
+// be replayed. A 5xx may follow a committed write, so only idempotent methods
+// are retried on those.
+var (
+	notProcessedStatus = map[int]bool{408: true, 429: true}
+	serverFaultStatus  = map[int]bool{500: true, 502: true, 503: true, 504: true}
+)
+
+func retryableFor(method string, status int) bool {
+	if notProcessedStatus[status] {
+		return true
+	}
+	return serverFaultStatus[status] && idempotent(method)
+}
 
 type Client struct {
 	apiURL       string
@@ -38,6 +51,8 @@ type Client struct {
 	apiToken     string
 	maxRetries   int
 	retryMaxTime time.Duration
+	timeout      time.Duration
+	maxResponse  int64
 
 	Media         *MediaService
 	Journal       *JournalService
@@ -71,9 +86,14 @@ func WithToken(token string) Option { return func(c *Client) { c.apiToken = toke
 
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.httpClient = h } }
 
+// WithTimeout bounds a single non-streaming request. It never mutates a
+// client passed to WithHTTPClient.
 func WithTimeout(d time.Duration) Option {
-	return func(c *Client) { c.httpClient.Timeout = d }
+	return func(c *Client) { c.timeout = d }
 }
+
+// WithMaxResponseBytes caps how much of a JSON response body is read.
+func WithMaxResponseBytes(n int64) Option { return func(c *Client) { c.maxResponse = n } }
 
 func WithMaxRetries(n int) Option { return func(c *Client) { c.maxRetries = n } }
 
@@ -85,20 +105,27 @@ func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l }
 // variables, then ~/.scambus/config.json.
 func New(opts ...Option) (*Client, error) {
 	c := &Client{
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		logger:       slog.New(slog.DiscardHandler),
 		maxRetries:   10,
 		retryMaxTime: 5 * time.Minute,
+		timeout:      30 * time.Second,
+		maxResponse:  64 << 20,
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
+	if c.httpClient == nil {
+		c.httpClient = &http.Client{}
+	}
+	// Credentials ride in headers; Go strips Authorization across hosts but
+	// forwards X-API-Key, so a redirect would hand the key to the new host.
+	if c.httpClient.CheckRedirect == nil {
+		c.httpClient.CheckRedirect = refuseRedirect
+	}
 
 	cfg := loadCLIConfig()
 	c.apiURL = resolveAPIURL(c.apiURL, cfg)
-	if !strings.HasSuffix(c.apiURL, "/api") {
-		c.apiURL += "/api"
-	}
+	c.apiURL = ensureAPIPath(c.apiURL)
 
 	if c.apiKeyID == "" {
 		c.apiKeyID = os.Getenv("SCAMBUS_API_KEY_ID")
@@ -145,6 +172,46 @@ func (c *Client) registerServices() {
 
 func (c *Client) APIURL() string { return c.apiURL }
 
+func refuseRedirect(req *http.Request, via []*http.Request) error {
+	return fmt.Errorf("scambus: refusing redirect to %s: the API does not redirect, and following one would disclose credentials", req.URL.Redacted())
+}
+
+// ensureAPIPath appends /api only when the base URL carries no path of its
+// own, so a versioned or proxied base is left alone.
+func ensureAPIPath(base string) string {
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Path == "" || parsed.Path == "/" {
+		return strings.TrimRight(base, "/") + "/api"
+	}
+	return strings.TrimRight(base, "/")
+}
+
+// idempotent reports whether replaying the method is safe. A POST or PATCH
+// may already have been committed when the response was lost.
+func idempotent(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
+// safeEndpoint escapes each path segment and refuses anything that would
+// leave the intended path or start a query.
+func safeEndpoint(endpoint string) (string, error) {
+	if strings.ContainsAny(endpoint, "?#") {
+		return "", fmt.Errorf("%w: path %q must not contain %q or %q", ErrValidation, endpoint, "?", "#")
+	}
+	segments := strings.Split(strings.TrimLeft(endpoint, "/"), "/")
+	for i, seg := range segments {
+		if seg == "." || seg == ".." {
+			return "", fmt.Errorf("%w: path %q must not contain a %q segment", ErrValidation, endpoint, seg)
+		}
+		segments[i] = url.PathEscape(seg)
+	}
+	return strings.Join(segments, "/"), nil
+}
+
 type request struct {
 	method      string
 	endpoint    string
@@ -153,10 +220,15 @@ type request struct {
 	contentType string
 	query       url.Values
 	accept      string
+	stream      bool
 }
 
 func (c *Client) newHTTPRequest(ctx context.Context, r request) (*http.Request, error) {
-	u := c.apiURL + "/" + strings.TrimLeft(r.endpoint, "/")
+	endpoint, err := safeEndpoint(r.endpoint)
+	if err != nil {
+		return nil, err
+	}
+	u := c.apiURL + "/" + endpoint
 	if len(r.query) > 0 {
 		u += "?" + r.query.Encode()
 	}
@@ -199,10 +271,18 @@ func (c *Client) newHTTPRequest(ctx context.Context, r request) (*http.Request, 
 }
 
 // do retries transient failures with full-jitter backoff, bounded by both
-// maxRetries and retryMaxTime. The caller owns closing the response body.
+// maxRetries and retryMaxTime. A non-idempotent request is replayed only when
+// the server states it did not process it, so a lost response never turns one
+// write into several. The caller owns closing the response body.
 func (c *Client) do(ctx context.Context, r request) (*http.Response, error) {
 	start := time.Now()
 	attempt := 0
+
+	if c.timeout > 0 && !r.stream {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+	}
 
 	for {
 		req, err := c.newHTTPRequest(ctx, r)
@@ -216,7 +296,8 @@ func (c *Client) do(ctx context.Context, r request) (*http.Response, error) {
 				return nil, ctx.Err()
 			}
 			elapsed := time.Since(start)
-			if attempt >= c.maxRetries || elapsed >= c.retryMaxTime {
+			// A dropped connection may still have delivered the request.
+			if !idempotent(r.method) || attempt >= c.maxRetries || elapsed >= c.retryMaxTime {
 				return nil, fmt.Errorf("scambus: %s %s failed after %d retries over %s: %w",
 					r.method, r.endpoint, attempt, elapsed.Round(time.Second), err)
 			}
@@ -231,11 +312,14 @@ func (c *Client) do(ctx context.Context, r request) (*http.Response, error) {
 			return resp, nil
 		}
 
-		if retryableStatus[resp.StatusCode] {
+		if retryableFor(r.method, resp.StatusCode) {
 			elapsed := time.Since(start)
 			if attempt < c.maxRetries && elapsed < c.retryMaxTime {
 				attempt++
 				delay := retryAfter(resp)
+				if delay == 0 {
+					delay = retryBaseDelay
+				}
 				if delay < 0 {
 					base := retryBaseDelay
 					if resp.StatusCode == http.StatusTooManyRequests {
@@ -339,9 +423,13 @@ func (c *Client) call(ctx context.Context, r request, out any) error {
 		return nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	limit := c.maxResponse
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return fmt.Errorf("scambus: read %s %s response: %w", r.method, r.endpoint, err)
+	}
+	if int64(len(body)) > limit {
+		return fmt.Errorf("scambus: %s %s response exceeds %d bytes", r.method, r.endpoint, limit)
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil
