@@ -36,7 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if report.IsFailed() {
-		log.Fatalf("report %s failed", report.ID)
+		log.Fatal("report generation failed")
 	}
 
 	if err := client.Reports.DownloadToFile(ctx, report.ID, "report.pdf"); err != nil {
