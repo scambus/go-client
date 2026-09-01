@@ -46,7 +46,7 @@ func TestServiceRoutes(t *testing.T) {
 		}},
 
 		{"case list", "GET", "/api/cases", func(c *Client) error {
-			_, err := c.Cases.List(ctx, &ListCasesOptions{Status: "open", IncludeTest: true})
+			_, err := c.Cases.List(ctx, &ListCasesOptions{Status: "open"})
 			return err
 		}},
 		{"case delete", "DELETE", "/api/cases/c1", func(c *Client) error {
@@ -85,7 +85,7 @@ func TestServiceRoutes(t *testing.T) {
 			return err
 		}},
 		{"queue update", "PUT", "/api/queues/q1", func(c *Client) error {
-			_, err := c.Queues.Update(ctx, "q1", UpdateQueueInput{Name: Ptr("renamed")})
+			_, err := c.Queues.Update(ctx, "q1", QueuePatch{Name: Ptr("renamed")})
 			return err
 		}},
 		{"queue delete", "DELETE", "/api/queues/q1", func(c *Client) error {
@@ -119,7 +119,7 @@ func TestServiceRoutes(t *testing.T) {
 		}},
 
 		{"stream list", "GET", "/api/export-streams", func(c *Client) error {
-			_, err := c.Streams.List(ctx, &ListStreamsOptions{Active: Ptr(true), Page: 1, Limit: 5})
+			_, err := c.Streams.List(ctx, &ListStreamsOptions{ActiveOnly: true, Page: 1, PageSize: 5})
 			return err
 		}},
 		{"stream get", "GET", "/api/export-streams/s1", func(c *Client) error {
@@ -171,7 +171,7 @@ func TestServiceRoutes(t *testing.T) {
 		}},
 
 		{"view list", "GET", "/api/views", func(c *Client) error {
-			_, err := c.Views.List(ctx)
+			_, err := c.Views.List(ctx, nil)
 			return err
 		}},
 		{"view get", "GET", "/api/views/v1", func(c *Client) error {
@@ -196,7 +196,7 @@ func TestServiceRoutes(t *testing.T) {
 		}},
 
 		{"tag list", "GET", "/api/tags", func(c *Client) error {
-			_, err := c.Tags.List(ctx)
+			_, err := c.Tags.List(ctx, nil)
 			return err
 		}},
 		{"tag get", "GET", "/api/tags/t1", func(c *Client) error {
@@ -229,18 +229,14 @@ func TestServiceRoutes(t *testing.T) {
 			_, err := c.Tags.Effective(ctx, "journal_entry", "e1")
 			return err
 		}},
-		{"tag history", "GET", "/api/tags/history/journal_entry/e1", func(c *Client) error {
-			_, err := c.Tags.History(ctx, "journal_entry", "e1")
-			return err
-		}},
 
 		{"search cases", "POST", "/api/search/cases", func(c *Client) error {
-			_, err := c.Search.Cases(ctx, SearchCasesInput{Query: "fraud"})
+			_, err := c.Search.Cases(ctx, SearchCasesInput{SearchQuery: "fraud"})
 			return err
 		}},
 
 		{"notification list", "GET", "/api/notifications", func(c *Client) error {
-			_, err := c.Notifications.List(ctx, &ListNotificationsOptions{UnreadOnly: true, Limit: 5, Offset: 2})
+			_, _, err := c.Notifications.List(ctx, &ListNotificationsOptions{UnreadOnly: true, Limit: 5, Offset: 2})
 			return err
 		}},
 		{"notification get", "GET", "/api/notifications/n1", func(c *Client) error {
@@ -319,7 +315,7 @@ func TestServiceRoutes(t *testing.T) {
 		}},
 
 		{"automation list", "GET", "/api/automations", func(c *Client) error {
-			_, err := c.Automations.List(ctx)
+			_, err := c.Automations.List(ctx, nil)
 			return err
 		}},
 		{"automation get", "GET", "/api/automations/a1", func(c *Client) error {
@@ -327,7 +323,7 @@ func TestServiceRoutes(t *testing.T) {
 			return err
 		}},
 		{"automation create", "POST", "/api/automations", func(c *Client) error {
-			_, err := c.Automations.Create(ctx, CreateAutomationInput{Name: "bot", Active: true})
+			_, err := c.Automations.Create(ctx, CreateAutomationInput{Name: "bot", IsActive: Ptr(true)})
 			return err
 		}},
 		{"automation keys list", "GET", "/api/automations/a1/api-keys", func(c *Client) error {
@@ -387,43 +383,62 @@ func TestServiceRoutes(t *testing.T) {
 	}
 }
 
-// stubBody answers with a shape the caller can decode: a list where the client
-// expects a slice, an object otherwise.
+// stubBody answers with the shape the handler actually returns. Every entry
+// here was read out of the backend handler, not assumed from the client.
 func stubBody(method, path string) any {
-	if method == http.MethodPost && path == "/api/search/cases" {
-		return []any{}
+	envelope := map[string]any{"data": []any{}, "pagination": map[string]any{}}
+
+	switch path {
+	// Paginated envelopes: tag.go:180, view.go:239, automation.go:86.
+	case "/api/tags", "/api/views", "/api/automations":
+		if method == http.MethodGet {
+			return envelope
+		}
+	// notification.go:75.
+	case "/api/notifications":
+		return map[string]any{"notifications": []any{}, "total": 0, "limit": 0, "offset": 0}
+	// session.go:49.
+	case "/api/sessions":
+		return map[string]any{"sessions": []any{}, "total": 0}
+	// case_comment.go:236.
+	case "/api/cases/c1/comments":
+		if method == http.MethodGet {
+			return map[string]any{"comments": []any{}, "total": 0}
+		}
+	// case_search.go:51.
+	case "/api/search/cases":
+		return map[string]any{"data": []any{}, "hasMore": false}
+	// file_export.go:503 returns a presigned location, not bytes.
+	case "/api/file-exports/f1/download":
+		return map[string]any{"url": "https://storage.test/f1.csv", "file_name": "f1.csv"}
 	}
+
 	if method != http.MethodGet {
 		return map[string]any{}
 	}
-	listPaths := map[string]bool{
-		"/api/journal-entries/in-progress":              true,
-		"/api/journal-entries/e1/extracted-identifiers": true,
-		"/api/external-systems":                         true,
-		"/api/cases/c1/comments":                        true,
-		"/api/queues":                                   true,
-		"/api/queues/q1/items":                          true,
-		"/api/queues/q1/items/i1/history":               true,
-		"/api/queues/q1/items/i1/events":                true,
-		"/api/queues/q1/items/i1/cluster":               true,
-		"/api/file-exports":                             true,
-		"/api/views":                                    true,
-		"/api/tags":                                     true,
-		"/api/tags/t1/values":                           true,
-		"/api/tags/effective/journal_entry/e1":          true,
-		"/api/tags/history/journal_entry/e1":            true,
-		"/api/notifications":                            true,
-		"/api/sessions":                                 true,
-		"/api/passkeys":                                 true,
-		"/api/personas":                                 true,
-		"/api/automations":                              true,
-		"/api/automations/a1/api-keys":                  true,
-		"/api/admin/special-domain-rules":               true,
-	}
-	if listPaths[path] {
+	if bareArrayPaths[path] {
 		return []any{}
 	}
 	return map[string]any{}
+}
+
+// bareArrayPaths are the endpoints that really do return a naked JSON array.
+var bareArrayPaths = map[string]bool{
+	"/api/journal-entries/in-progress":              true,
+	"/api/journal-entries/e1/extracted-identifiers": true,
+	"/api/external-systems":                         true,
+	"/api/queues":                                   true,
+	"/api/queues/q1/items":                          true,
+	"/api/queues/q1/items/i1/history":               true,
+	"/api/queues/q1/items/i1/events":                true,
+	"/api/queues/q1/items/i1/cluster":               true,
+	"/api/file-exports":                             true,
+	"/api/tags/t1/values":                           true,
+	"/api/tags/effective/journal_entry/e1":          true,
+	"/api/passkeys":                                 true,
+	"/api/personas":                                 true,
+	"/api/automations/a1/api-keys":                  true,
+	"/api/admin/special-domain-rules":               true,
 }
 
 func TestOptionsApplyToClient(t *testing.T) {

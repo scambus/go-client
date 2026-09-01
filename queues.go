@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 type QueueService struct{ client *Client }
@@ -48,26 +49,91 @@ func (s *QueueService) Get(ctx context.Context, queueID string) (*Queue, error) 
 	return &out, nil
 }
 
+// UpdateQueueInput is a whole-object replace. The server applies
+// description, max_contacts_per_cluster, rotation_enabled, actor_cluster_id,
+// auto_populate and is_active unconditionally, so an omitted field is written
+// as its zero value. Use Update, which reads the queue first and resends
+// every field, rather than building this by hand.
 type UpdateQueueInput struct {
-	Name                  *string        `json:"name,omitempty"`
-	Description           *string        `json:"description,omitempty"`
+	Name                  string         `json:"name"`
+	Description           string         `json:"description"`
 	FilterCriteria        map[string]any `json:"filter_criteria,omitempty"`
-	CadenceDays           *int           `json:"cadence_days,omitempty"`
-	CooldownHours         *int           `json:"cooldown_hours,omitempty"`
-	MaxContactsPerCluster *int           `json:"max_contacts_per_cluster,omitempty"`
-	RotationEnabled       *bool          `json:"rotation_enabled,omitempty"`
-	PriorityMode          *string        `json:"priority_mode,omitempty"`
-	AutoPopulate          *bool          `json:"auto_populate,omitempty"`
-	ActorClusterID        *string        `json:"actor_cluster_id,omitempty"`
-	IsActive              *bool          `json:"is_active,omitempty"`
+	CadenceDays           int            `json:"cadence_days"`
+	CooldownHours         int            `json:"cooldown_hours"`
+	MaxContactsPerCluster *int           `json:"max_contacts_per_cluster"`
+	RotationEnabled       bool           `json:"rotation_enabled"`
+	PriorityMode          string         `json:"priority_mode"`
+	AutoPopulate          bool           `json:"auto_populate"`
+	ActorClusterID        string         `json:"actor_cluster_id,omitempty"`
+	IsActive              bool           `json:"is_active"`
 }
 
-func (s *QueueService) Update(ctx context.Context, queueID string, in UpdateQueueInput) (*Queue, error) {
+// QueuePatch names the fields Update should change. Anything left nil keeps
+// the queue's current value.
+type QueuePatch struct {
+	Name                  *string
+	Description           *string
+	FilterCriteria        map[string]any
+	CadenceDays           *int
+	CooldownHours         *int
+	MaxContactsPerCluster *int
+	RotationEnabled       *bool
+	PriorityMode          *string
+	AutoPopulate          *bool
+	ActorClusterID        *string
+	IsActive              *bool
+}
+
+// Update reads the queue, applies the patch, and resends every field. The
+// API has no partial update: a field the request omits is overwritten with
+// its zero value, which would deactivate the queue and clear its description.
+func (s *QueueService) Update(ctx context.Context, queueID string, patch QueuePatch) (*Queue, error) {
+	current, err := s.Get(ctx, queueID)
+	if err != nil {
+		return nil, err
+	}
+
+	body := UpdateQueueInput{
+		Name:                  current.Name,
+		Description:           current.Description,
+		FilterCriteria:        current.FilterCriteria,
+		CadenceDays:           current.CadenceDays,
+		CooldownHours:         current.CooldownHours,
+		MaxContactsPerCluster: current.MaxContactsPerCluster,
+		RotationEnabled:       current.RotationEnabled,
+		PriorityMode:          current.PriorityMode,
+		AutoPopulate:          current.AutoPopulate,
+		ActorClusterID:        current.ActorClusterID,
+		IsActive:              current.IsActive,
+	}
+
+	applyIfSet(&body.Name, patch.Name)
+	applyIfSet(&body.Description, patch.Description)
+	applyIfSet(&body.CadenceDays, patch.CadenceDays)
+	applyIfSet(&body.CooldownHours, patch.CooldownHours)
+	applyIfSet(&body.RotationEnabled, patch.RotationEnabled)
+	applyIfSet(&body.PriorityMode, patch.PriorityMode)
+	applyIfSet(&body.AutoPopulate, patch.AutoPopulate)
+	applyIfSet(&body.ActorClusterID, patch.ActorClusterID)
+	applyIfSet(&body.IsActive, patch.IsActive)
+	if patch.MaxContactsPerCluster != nil {
+		body.MaxContactsPerCluster = patch.MaxContactsPerCluster
+	}
+	if patch.FilterCriteria != nil {
+		body.FilterCriteria = patch.FilterCriteria
+	}
+
 	var out Queue
-	if err := s.client.put(ctx, "/queues/"+queueID, in, &out); err != nil {
+	if err := s.client.put(ctx, "/queues/"+queueID, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+func applyIfSet[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
 }
 
 func (s *QueueService) Delete(ctx context.Context, queueID string) error {
@@ -122,11 +188,15 @@ func (s *QueueService) ReadStream(ctx context.Context, queueID string, opts *Rea
 	return &out, nil
 }
 
-// Claim returns nil when the queue holds no claimable item.
+// Claim returns nil when the queue holds no claimable item. A missing or
+// inaccessible queue is an error: the API answers 404 for both, but only the
+// empty case carries a JSON body naming it.
 func (s *QueueService) Claim(ctx context.Context, queueID string) (*QueueItem, error) {
 	var out QueueItem
 	if err := s.client.post(ctx, "/queues/"+queueID+"/claim", nil, &out); err != nil {
-		if errors.Is(err, ErrNotFound) {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound &&
+			strings.Contains(apiErr.Message, "No items available") {
 			return nil, nil
 		}
 		return nil, err

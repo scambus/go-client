@@ -123,22 +123,17 @@ func TestStreamIdentifierDecodesBareConfidence(t *testing.T) {
 	}
 }
 
-func TestReportIDFallsBackToIDKey(t *testing.T) {
-	var withReportID, withID Report
-	if err := json.Unmarshal([]byte(`{"report_id":"r1","report_type":"identifier","status":"pending"}`), &withReportID); err != nil {
+func TestReportDecodesHandlerShape(t *testing.T) {
+	var report Report
+	raw := `{"report_id":"r1","status":"completed","download_url":"https://x/y.pdf","status_url":"https://x/s","generated_at":"2025-01-15T10:30:00Z"}`
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
 		t.Fatal(err)
 	}
-	if withReportID.ID != "r1" {
-		t.Fatalf("got %q", withReportID.ID)
+	if report.ID != "r1" || report.StatusURL == "" || !report.GeneratedAt.IsSet() {
+		t.Fatalf("got %+v", report)
 	}
-	if err := json.Unmarshal([]byte(`{"id":"r2","type":"journal_entry","status":"completed"}`), &withID); err != nil {
-		t.Fatal(err)
-	}
-	if withID.ID != "r2" || withID.ReportType != "journal_entry" {
-		t.Fatalf("got %+v", withID)
-	}
-	if !withID.IsCompleted() || withID.IsProcessing() {
-		t.Fatalf("status helpers wrong for %+v", withID)
+	if !report.IsCompleted() || report.IsProcessing() {
+		t.Fatalf("status helpers wrong for %+v", report)
 	}
 }
 

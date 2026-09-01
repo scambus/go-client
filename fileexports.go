@@ -2,6 +2,7 @@ package scambus
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -64,12 +65,39 @@ func (s *FileExportService) Delete(ctx context.Context, exportID string) error {
 	return s.client.delete(ctx, "/file-exports/"+exportID)
 }
 
+type downloadTarget struct {
+	URL      string `json:"url"`
+	FileName string `json:"file_name"`
+}
+
+// DownloadURL returns the presigned location of the finished export.
+func (s *FileExportService) DownloadURL(ctx context.Context, exportID string) (string, string, error) {
+	var out downloadTarget
+	if err := s.client.get(ctx, "/file-exports/"+exportID+"/download", nil, &out); err != nil {
+		return "", "", err
+	}
+	return out.URL, out.FileName, nil
+}
+
+// Download resolves the presigned URL and streams the bytes. The URL carries
+// its own credentials, so no auth header is sent with the second request.
 func (s *FileExportService) Download(ctx context.Context, exportID string, w io.Writer) (int64, error) {
-	resp, err := s.client.do(ctx, request{method: http.MethodGet, endpoint: "/file-exports/" + exportID + "/download", stream: true})
+	target, _, err := s.DownloadURL(ctx, exportID)
 	if err != nil {
 		return 0, err
 	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := s.client.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("scambus: fetch export %s: %w", exportID, err)
+	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return 0, fmt.Errorf("scambus: fetch export %s: %s", exportID, resp.Status)
+	}
 	return io.Copy(w, resp.Body)
 }
 

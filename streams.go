@@ -9,9 +9,9 @@ import (
 type StreamService struct{ client *Client }
 
 type ListStreamsOptions struct {
-	Active *bool
-	Page   int
-	Limit  int
+	ActiveOnly bool
+	Page       int
+	PageSize   int
 }
 
 type ListStreamsResult struct {
@@ -22,14 +22,16 @@ type ListStreamsResult struct {
 func (s *StreamService) List(ctx context.Context, opts *ListStreamsOptions) (*ListStreamsResult, error) {
 	q := url.Values{}
 	if opts != nil {
-		if opts.Active != nil {
-			q.Set("active", strconv.FormatBool(*opts.Active))
+		// The handler filters only on active=true; there is no way to ask
+		// for inactive streams, so a false value is left off.
+		if opts.ActiveOnly {
+			q.Set("active", "true")
 		}
 		if opts.Page > 0 {
 			q.Set("page", strconv.Itoa(opts.Page))
 		}
-		if opts.Limit > 0 {
-			q.Set("limit", strconv.Itoa(opts.Limit))
+		if opts.PageSize > 0 {
+			q.Set("pageSize", strconv.Itoa(opts.PageSize))
 		}
 	}
 	var out ListStreamsResult
@@ -78,7 +80,7 @@ func (s *StreamService) Create(ctx context.Context, in CreateStreamInput) (*Expo
 type CreateTemporaryStreamInput struct {
 	Name                  string          `json:"name,omitempty"`
 	DataType              StreamDataType  `json:"data_type"`
-	ViewID                string          `json:"view_id,omitempty"`
+	ViewID                string          `json:"viewId,omitempty"`
 	FilterCriteria        *FilterCriteria `json:"filter_criteria,omitempty"`
 	FilterExpression      string          `json:"filter_expression,omitempty"`
 	IncludeOriginator     bool            `json:"include_originator,omitempty"`
@@ -101,11 +103,15 @@ func (s *StreamService) Delete(ctx context.Context, streamID string) error {
 	return s.client.delete(ctx, "/export-streams/"+streamID)
 }
 
+// RecoverResult reports a 202; recovery then runs asynchronously.
 type RecoverResult struct {
-	StreamID       string `json:"stream_id"`
-	Status         string `json:"status"`
-	MessagesLoaded int    `json:"messages_loaded"`
-	Message        string `json:"message,omitempty"`
+	Status           string `json:"status"`
+	Message          string `json:"message,omitempty"`
+	StreamID         string `json:"stream_id"`
+	StreamName       string `json:"stream_name,omitempty"`
+	IgnoreCheckpoint bool   `json:"ignore_checkpoint"`
+	ClearStream      bool   `json:"clear_stream"`
+	TriggeredBy      string `json:"triggered_by,omitempty"`
 }
 
 func (s *StreamService) Recover(ctx context.Context, streamID string, ignoreCheckpoint, clearStream bool) (*RecoverResult, error) {
@@ -147,7 +153,7 @@ func (s *StreamService) RecoveryHistory(ctx context.Context, opts *RecoveryHisto
 			q.Set("offset", strconv.Itoa(opts.Offset))
 		}
 		if opts.StreamID != "" {
-			q.Set("streamId", opts.StreamID)
+			q.Set("stream_id", opts.StreamID)
 		}
 	}
 	var out map[string]any

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,7 +36,7 @@ func TestCreateEmailSendsDetails(t *testing.T) {
 		Type        string       `json:"type"`
 		PerformedAt Time         `json:"performed_at"`
 		Details     EmailDetails `json:"details"`
-		Evidence    Evidence     `json:"evidence"`
+		Evidence    []Evidence   `json:"evidence"`
 	}
 	srv.requests[0].decode(t, &body)
 	if body.Type != "email" {
@@ -47,7 +48,7 @@ func TestCreateEmailSendsDetails(t *testing.T) {
 	if !body.PerformedAt.Equal(sentAt.Time) {
 		t.Fatalf("performed_at %v", body.PerformedAt.Time)
 	}
-	if body.Evidence.Type != "screenshot" || len(body.Evidence.MediaIDs) != 1 {
+	if len(body.Evidence) != 1 || body.Evidence[0].Type != "screenshot" || body.Evidence[0].MediaID != "m1" {
 		t.Fatalf("evidence %+v", body.Evidence)
 	}
 }
@@ -95,15 +96,15 @@ func TestCreateNoteDefaultsPerformedAt(t *testing.T) {
 	}
 
 	var body struct {
-		PerformedAt Time     `json:"performed_at"`
-		Evidence    Evidence `json:"evidence"`
+		PerformedAt Time       `json:"performed_at"`
+		Evidence    []Evidence `json:"evidence"`
 	}
 	srv.requests[0].decode(t, &body)
 	if body.PerformedAt.Before(before) {
 		t.Fatalf("performed_at %v should default to now", body.PerformedAt.Time)
 	}
-	if body.Evidence.Type != "document" {
-		t.Fatalf("evidence type %q", body.Evidence.Type)
+	if len(body.Evidence) != 1 || body.Evidence[0].Type != "document" {
+		t.Fatalf("evidence %+v", body.Evidence)
 	}
 }
 
@@ -226,9 +227,18 @@ func TestAPIErrorFallsBackToStatusText(t *testing.T) {
 	}
 }
 
-func TestDownloadFileExport(t *testing.T) {
-	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+// The export download endpoint hands back a presigned location; the bytes
+// live elsewhere and that second request carries no credentials.
+func TestDownloadFileExportFollowsPresignedURL(t *testing.T) {
+	var storageAuth string
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		storageAuth = r.Header.Get("Authorization") + r.Header.Get("X-API-Key")
 		w.Write([]byte("id,value\n1,x\n"))
+	}))
+	defer storage.Close()
+
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, 200, map[string]string{"url": storage.URL + "/blob.csv", "file_name": "export.csv"})
 	})
 	c := srv.client(t)
 
@@ -237,11 +247,14 @@ func TestDownloadFileExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != int64(buf.Len()) || buf.String() != "id,value\n1,x\n" {
+	if buf.String() != "id,value\n1,x\n" || n != int64(buf.Len()) {
 		t.Fatalf("got %q (%d bytes)", buf.String(), n)
 	}
 	if srv.last().Path != "/api/file-exports/f1/download" {
 		t.Fatalf("path %q", srv.last().Path)
+	}
+	if storageAuth != "" {
+		t.Fatalf("credentials must not be sent to the presigned host: %q", storageAuth)
 	}
 
 	path := filepath.Join(t.TempDir(), "out", "export.csv")

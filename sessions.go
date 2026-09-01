@@ -5,11 +5,14 @@ import "context"
 type SessionService struct{ client *Client }
 
 func (s *SessionService) List(ctx context.Context) ([]Session, error) {
-	var out []Session
+	var out struct {
+		Sessions []Session `json:"sessions"`
+		Total    int       `json:"total"`
+	}
 	if err := s.client.get(ctx, "/sessions", nil, &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return out.Sessions, nil
 }
 
 func (s *SessionService) Revoke(ctx context.Context, sessionID string) error {
@@ -36,9 +39,10 @@ func (s *SessionService) TwoFactorStatus(ctx context.Context) (*TwoFactorStatus,
 	return &out, nil
 }
 
-func (s *SessionService) SetTwoFactor(ctx context.Context, enabled bool) (*TwoFactorStatus, error) {
-	var out TwoFactorStatus
-	if err := s.client.post(ctx, "/passkeys/2fa", map[string]bool{"enabled": enabled}, &out); err != nil {
+// SetTwoFactor sends {"enable": …}; the server reads that key, not "enabled".
+func (s *SessionService) SetTwoFactor(ctx context.Context, enable bool) (*TwoFactorResult, error) {
+	var out TwoFactorResult
+	if err := s.client.post(ctx, "/passkeys/2fa", map[string]bool{"enable": enable}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -4,12 +4,17 @@ import "context"
 
 type AutomationService struct{ client *Client }
 
-func (s *AutomationService) List(ctx context.Context) ([]Automation, error) {
-	var out []Automation
-	if err := s.client.get(ctx, "/automations", nil, &out); err != nil {
+type ListAutomationsResult struct {
+	Data       []Automation `json:"data"`
+	Pagination Pagination   `json:"pagination"`
+}
+
+func (s *AutomationService) List(ctx context.Context, page *PageRequest) (*ListAutomationsResult, error) {
+	var out ListAutomationsResult
+	if err := s.client.get(ctx, "/automations", page.values(), &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &out, nil
 }
 
 func (s *AutomationService) Get(ctx context.Context, automationID string) (*Automation, error) {
@@ -23,7 +28,7 @@ func (s *AutomationService) Get(ctx context.Context, automationID string) (*Auto
 type CreateAutomationInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Active      bool   `json:"active"`
+	IsActive    *bool  `json:"is_active,omitempty"`
 }
 
 func (s *AutomationService) Create(ctx context.Context, in CreateAutomationInput) (*Automation, error) {
@@ -46,7 +51,7 @@ func (s *AutomationService) ListAPIKeys(ctx context.Context, automationID string
 func (s *AutomationService) CreateAPIKey(ctx context.Context, automationID, name, expiresAt string) (*AutomationAPIKey, error) {
 	body := map[string]string{"name": name}
 	if expiresAt != "" {
-		body["expiresAt"] = expiresAt
+		body["expires_at"] = expiresAt
 	}
 	var out AutomationAPIKey
 	if err := s.client.post(ctx, "/automations/"+automationID+"/api-keys", body, &out); err != nil {

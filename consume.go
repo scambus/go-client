@@ -72,10 +72,6 @@ func (s *ConsumeService) Poll(ctx context.Context, consumerKey string, opts *Pol
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNoContent {
-		return &PollResult{}, nil
-	}
-
 	var out PollResult
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
@@ -83,16 +79,26 @@ func (s *ConsumeService) Poll(ctx context.Context, consumerKey string, opts *Pol
 	return &out, nil
 }
 
+type StreamCursors struct {
+	Beginning   string `json:"beginning"`
+	End         string `json:"end"`
+	Default     string `json:"default"`
+	Recommended string `json:"recommended"`
+}
+
 type StreamInfo struct {
-	Stream        string `json:"stream"`
-	StreamID      string `json:"stream_id,omitempty"`
-	Name          string `json:"name,omitempty"`
-	DataType      string `json:"data_type,omitempty"`
-	MessageCount  int64  `json:"message_count"`
-	FirstID       string `json:"first_id,omitempty"`
-	LastID        string `json:"last_id,omitempty"`
-	RetentionDays int    `json:"retention_days,omitempty"`
-	IsActive      bool   `json:"is_active"`
+	StreamID           string         `json:"stream_id"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description,omitempty"`
+	DataType           string         `json:"data_type"`
+	FilterCriteria     map[string]any `json:"filter_criteria,omitempty"`
+	RateLimitPerMinute int            `json:"rate_limit_per_minute"`
+	BatchSize          int            `json:"batch_size"`
+	Cursors            StreamCursors  `json:"cursors"`
+	MessagesInStream   int64          `json:"messages_in_stream"`
+	FirstEntry         string         `json:"first_entry,omitempty"`
+	LastEntry          string         `json:"last_entry,omitempty"`
+	ConsumerGroups     any            `json:"consumer_groups,omitempty"`
 }
 
 func (s *ConsumeService) Info(ctx context.Context, consumerKey string) (*StreamInfo, error) {

@@ -7,12 +7,17 @@ import (
 
 type ViewService struct{ client *Client }
 
-func (s *ViewService) List(ctx context.Context) ([]View, error) {
-	var out []View
-	if err := s.client.get(ctx, "/views", nil, &out); err != nil {
+type ListViewsResult struct {
+	Data       []View     `json:"data"`
+	Pagination Pagination `json:"pagination"`
+}
+
+func (s *ViewService) List(ctx context.Context, page *PageRequest) (*ListViewsResult, error) {
+	var out ListViewsResult
+	if err := s.client.get(ctx, "/views", page.values(), &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &out, nil
 }
 
 func (s *ViewService) Get(ctx context.Context, viewID string) (*View, error) {
@@ -76,8 +81,8 @@ type ExecuteViewResult struct {
 	Data       []json.RawMessage `json:"data"`
 	NextCursor string            `json:"nextCursor"`
 	HasMore    bool              `json:"hasMore"`
-	Count      int               `json:"count"`
-	EntityType string            `json:"entity_type"`
+	TotalCount int               `json:"totalCount"`
+	View       *View             `json:"view,omitempty"`
 }
 
 func (r ExecuteViewResult) JournalEntries() ([]JournalEntry, error) {

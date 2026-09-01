@@ -1,5 +1,10 @@
 package scambus
 
+import (
+	"net/url"
+	"strconv"
+)
+
 type IdentifierType string
 
 const (
@@ -199,3 +204,27 @@ type FilterCriteria struct {
 }
 
 func Ptr[T any](v T) *T { return &v }
+
+// PageRequest carries the paging parameters the API actually reads. The
+// server ignores "limit"; page size is "pageSize", default 25, maximum 100.
+type PageRequest struct {
+	Page     int
+	PageSize int
+}
+
+func (p *PageRequest) values() url.Values {
+	if p == nil {
+		return nil
+	}
+	q := url.Values{}
+	if p.Page > 0 {
+		q.Set("page", strconv.Itoa(p.Page))
+	}
+	if p.PageSize > 0 {
+		q.Set("pageSize", strconv.Itoa(p.PageSize))
+	}
+	if len(q) == 0 {
+		return nil
+	}
+	return q
+}

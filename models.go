@@ -1,7 +1,5 @@
 package scambus
 
-import "encoding/json"
-
 type Identifier struct {
 	ID             string           `json:"id"`
 	Type           string           `json:"type"`
@@ -30,17 +28,18 @@ type EnrichedDetail struct {
 	Source string `json:"source"`
 }
 
+// Evidence carries at most one media item. Attach several by sending one
+// Evidence per item.
 type Evidence struct {
-	ID          string   `json:"id,omitempty"`
-	Type        string   `json:"type"`
-	Title       string   `json:"title"`
-	Description string   `json:"description,omitempty"`
-	Source      string   `json:"source,omitempty"`
-	CollectedAt Time     `json:"collected_at,omitzero"`
-	MediaIDs    []string `json:"media_ids,omitempty"`
-	CreatedAt   Time     `json:"created_at,omitzero"`
-	UpdatedAt   Time     `json:"updated_at,omitzero"`
-	IsTest      bool     `json:"is_test,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	Source      string `json:"source,omitempty"`
+	CollectedAt Time   `json:"collected_at,omitzero"`
+	MediaID     string `json:"media_id,omitempty"`
+	CreatedAt   Time   `json:"created_at,omitzero"`
+	UpdatedAt   Time   `json:"updated_at,omitzero"`
+	IsTest      bool   `json:"is_test,omitempty"`
 }
 
 type Media struct {
@@ -65,23 +64,20 @@ type JournalEntry struct {
 	Identifiers          []Identifier               `json:"identifiers,omitempty"`
 	OurIdentifiers       []Identifier               `json:"our_identifiers,omitempty"`
 	Evidence             []Evidence                 `json:"evidence,omitempty"`
-	CaseID               string                     `json:"case_id,omitempty"`
 	StartTime            Time                       `json:"start_time"`
 	EndTime              Time                       `json:"end_time"`
 	ParentJournalEntryID string                     `json:"parent_journal_entry_id,omitempty"`
 	BatchID              string                     `json:"batch_id,omitempty"`
-	Tags                 []map[string]any           `json:"tags,omitempty"`
-	EffectiveTags        []map[string]any           `json:"effective_tags,omitempty"`
+	TagDisplay           []map[string]any           `json:"tag_display,omitempty"`
 	TotalKarma           *int                       `json:"total_karma,omitempty"`
 	KarmaBreakdown       *KarmaBreakdown            `json:"karma_breakdown,omitempty"`
 	IsDraft              bool                       `json:"is_draft"`
 	IsTest               bool                       `json:"is_test"`
-	DraftMetadata        map[string]any             `json:"draft_metadata,omitempty"`
-	Signature            string                     `json:"signature,omitempty"`
+	DraftSavedAt         Time                       `json:"draft_saved_at"`
 	SignedBy             string                     `json:"signed_by,omitempty"`
 	SignatureAlgorithm   string                     `json:"signature_algorithm,omitempty"`
 	SignedAt             Time                       `json:"signed_at"`
-	ChildEntries         []JournalEntry             `json:"child_entries,omitempty"`
+	ChildJournalEntries  []JournalEntry             `json:"child_journal_entries,omitempty"`
 	FailedIdentifiers    []FailedIdentifier         `json:"failed_identifiers,omitempty"`
 	ExtractedIdentifiers []ExtractedIdentifier      `json:"extracted_identifiers,omitempty"`
 	ExternalIdentifiers  []ExternalIdentifierRecord `json:"external_identifiers,omitempty"`
@@ -148,17 +144,19 @@ type ExternalIdentifierRecord struct {
 }
 
 type ExternalSystem struct {
-	Name        string `json:"name"`
+	Key         string `json:"key"`
 	DisplayName string `json:"display_name"`
-	Pattern     string `json:"pattern,omitempty"`
-	LinkFormat  string `json:"link_format,omitempty"`
 }
 
 type BatchCreateResult struct {
-	Results   []BatchEntryResult `json:"results"`
-	Total     int                `json:"total"`
-	Succeeded int                `json:"succeeded"`
-	Failed    int                `json:"failed"`
+	Results []BatchEntryResult `json:"results"`
+	Summary BatchSummary       `json:"summary"`
+}
+
+type BatchSummary struct {
+	Total     int `json:"total"`
+	Succeeded int `json:"succeeded"`
+	Failed    int `json:"failed"`
 }
 
 type BatchEntryResult struct {
@@ -183,15 +181,16 @@ type KarmaBreakdown struct {
 }
 
 type Case struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Notes     string `json:"notes,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Priority  string `json:"priority,omitempty"`
-	CreatedAt Time   `json:"created_at"`
-	UpdatedAt Time   `json:"updated_at"`
-	CreatedBy string `json:"created_by,omitempty"`
-	IsTest    bool   `json:"is_test"`
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Notes          string `json:"notes,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Priority       string `json:"priority,omitempty"`
+	CreatedAt      Time   `json:"created_at"`
+	UpdatedAt      Time   `json:"updated_at"`
+	OriginatorID   string `json:"originator_id,omitempty"`
+	OriginatorType string `json:"originator_type,omitempty"`
+	IsTest         bool   `json:"is_test"`
 }
 
 type CaseComment struct {
@@ -275,21 +274,23 @@ type Session struct {
 }
 
 type Passkey struct {
-	ID             string   `json:"id"`
-	UserID         string   `json:"user_id"`
-	Name           string   `json:"name"`
-	SignCount      int      `json:"sign_count"`
-	Transports     []string `json:"transports,omitempty"`
-	BackupEligible bool     `json:"backup_eligible"`
-	BackupState    bool     `json:"backup_state"`
-	CreatedAt      Time     `json:"created_at"`
-	UpdatedAt      Time     `json:"updated_at"`
-	LastUsedAt     Time     `json:"last_used_at"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	BackupEligible bool   `json:"backup_eligible"`
+	BackupState    bool   `json:"backup_state"`
+	CreatedAt      Time   `json:"created_at"`
+	LastUsedAt     Time   `json:"last_used_at"`
 }
 
 type TwoFactorStatus struct {
-	Enabled      bool `json:"enabled"`
-	PasskeyCount int  `json:"passkey_count,omitempty"`
+	HasPasskeys bool `json:"has_passkeys"`
+	Requires2FA bool `json:"requires_2fa"`
+	CanEnable   bool `json:"can_enable"`
+}
+
+type TwoFactorResult struct {
+	Success bool `json:"success"`
+	Enabled bool `json:"enabled"`
 }
 
 type View struct {
@@ -306,7 +307,7 @@ type View struct {
 	CreatedAt      Time           `json:"created_at"`
 	UpdatedAt      Time           `json:"updated_at"`
 	CreatedBy      string         `json:"created_by,omitempty"`
-	OrganizationID string         `json:"organization_id,omitempty"`
+	OrgID          string         `json:"org_id,omitempty"`
 }
 
 type Persona struct {
@@ -352,17 +353,11 @@ type PersonaMediaLink struct {
 }
 
 type Report struct {
-	ID                string `json:"report_id"`
-	ReportType        string `json:"report_type"`
-	Status            string `json:"status"`
-	IdentifierCount   int    `json:"identifier_count"`
-	JournalEntryCount int    `json:"journal_entry_count"`
-	EvidenceCount     int    `json:"evidence_count"`
-	DownloadURL       string `json:"download_url,omitempty"`
-	GeneratedAt       Time   `json:"generated_at"`
-	ExpiresAt         Time   `json:"expires_at"`
-	CreatedAt         Time   `json:"created_at"`
-	ErrorMessage      string `json:"error_message,omitempty"`
+	ID          string `json:"report_id"`
+	Status      string `json:"status"`
+	DownloadURL string `json:"download_url,omitempty"`
+	StatusURL   string `json:"status_url,omitempty"`
+	GeneratedAt Time   `json:"generated_at"`
 }
 
 func (r Report) IsCompleted() bool { return r.Status == "completed" }
@@ -371,49 +366,32 @@ func (r Report) IsFailed() bool { return r.Status == "failed" }
 
 func (r Report) IsProcessing() bool { return r.Status == "pending" || r.Status == "processing" }
 
-// UnmarshalJSON fills ID and ReportType from whichever key the endpoint used.
-func (r *Report) UnmarshalJSON(data []byte) error {
-	type alias Report
-	var raw struct {
-		alias
-		AltID   string `json:"id"`
-		AltType string `json:"type"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	*r = Report(raw.alias)
-	if r.ID == "" {
-		r.ID = raw.AltID
-	}
-	if r.ReportType == "" {
-		r.ReportType = raw.AltType
-	}
-	return nil
-}
-
 type Automation struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Active      bool   `json:"active"`
+	IsActive    bool   `json:"is_active"`
 	OwnerOrgID  string `json:"owner_org_id,omitempty"`
-	CreatedBy   string `json:"created_by,omitempty"`
 	CreatedAt   Time   `json:"created_at"`
 	UpdatedAt   Time   `json:"updated_at"`
 }
 
 type AutomationAPIKey struct {
 	ID           string `json:"id"`
-	AutomationID string `json:"automation_id"`
+	AutomationID string `json:"automation_id,omitempty"`
 	Name         string `json:"name"`
-	KeyID        string `json:"key_id,omitempty"`
-	Secret       string `json:"secret,omitempty"`
-	Prefix       string `json:"prefix,omitempty"`
+	Description  string `json:"description,omitempty"`
+	OwnerID      string `json:"owner_id,omitempty"`
+	OwnerType    string `json:"owner_type,omitempty"`
+	IsActive     bool   `json:"is_active"`
+	LastUsed     Time   `json:"last_used"`
 	ExpiresAt    Time   `json:"expires_at"`
-	RevokedAt    Time   `json:"revoked_at"`
-	LastUsedAt   Time   `json:"last_used_at"`
 	CreatedAt    Time   `json:"created_at"`
+	UpdatedAt    Time   `json:"updated_at"`
+
+	// Key is the secret, returned only by CreateAPIKey and never again.
+	Key      string `json:"key,omitempty"`
+	SecretID string `json:"secret_id,omitempty"`
 }
 
 type IdentifierExclusion struct {
@@ -467,27 +445,32 @@ type URLConsolidationStatus struct {
 }
 
 type FileExport struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name"`
-	SourceType   string         `json:"source_type"`
-	SourceID     string         `json:"source_id,omitempty"`
-	EntityType   string         `json:"entity_type"`
-	Format       string         `json:"format"`
-	Status       string         `json:"status"`
-	RowCount     int            `json:"row_count"`
-	FileSize     int64          `json:"file_size"`
-	DownloadURL  string         `json:"download_url,omitempty"`
-	Options      map[string]any `json:"format_options,omitempty"`
-	ErrorMessage string         `json:"error_message,omitempty"`
-	ExpiresAt    Time           `json:"expires_at"`
-	CreatedAt    Time           `json:"created_at"`
-	UpdatedAt    Time           `json:"updated_at"`
+	ID            string         `json:"id"`
+	SourceType    string         `json:"source_type"`
+	SourceID      string         `json:"source_id,omitempty"`
+	SourceName    string         `json:"source_name,omitempty"`
+	EntityType    string         `json:"entity_type"`
+	Format        string         `json:"format"`
+	Status        string         `json:"status"`
+	Progress      int            `json:"progress"`
+	TotalRows     int            `json:"total_rows"`
+	ExportedRows  int            `json:"exported_rows"`
+	Truncated     bool           `json:"truncated"`
+	FileName      string         `json:"file_name,omitempty"`
+	FileSizeBytes int64          `json:"file_size_bytes"`
+	ExportParams  map[string]any `json:"export_params,omitempty"`
+	ErrorMessage  string         `json:"error_message,omitempty"`
+	StartedAt     Time           `json:"started_at"`
+	CompletedAt   Time           `json:"completed_at"`
+	ExpiresAt     Time           `json:"expires_at"`
+	CreatedAt     Time           `json:"created_at"`
+	UpdatedAt     Time           `json:"updated_at"`
 }
 
 type Pagination struct {
 	Page       int `json:"page"`
-	Limit      int `json:"limit"`
-	Total      int `json:"total"`
+	PageSize   int `json:"page_size"`
+	TotalItems int `json:"total_items"`
 	TotalPages int `json:"total_pages"`
 }
 

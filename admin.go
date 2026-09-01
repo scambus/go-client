@@ -30,12 +30,15 @@ func (s *AdminService) ListSpecialDomainRules(ctx context.Context, opts *ListDom
 	return out, nil
 }
 
+// CreateDomainRuleInput leaves StripQuery and StripFragment nil to accept the
+// server default of true.
 type CreateDomainRuleInput struct {
 	Domain        string `json:"domain"`
 	Category      string `json:"category"`
-	PathDepth     int    `json:"path_depth"`
-	StripQuery    bool   `json:"strip_query"`
-	StripFragment bool   `json:"strip_fragment"`
+	PathDepth     *int   `json:"path_depth,omitempty"`
+	StripQuery    *bool  `json:"strip_query,omitempty"`
+	StripFragment *bool  `json:"strip_fragment,omitempty"`
+	IsActive      *bool  `json:"is_active,omitempty"`
 }
 
 func (s *AdminService) CreateSpecialDomainRule(ctx context.Context, in CreateDomainRuleInput) (*SpecialDomainRule, error) {

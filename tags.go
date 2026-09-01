@@ -4,12 +4,17 @@ import "context"
 
 type TagService struct{ client *Client }
 
-func (s *TagService) List(ctx context.Context) ([]Tag, error) {
-	var out []Tag
-	if err := s.client.get(ctx, "/tags", nil, &out); err != nil {
+type ListTagsResult struct {
+	Data       []Tag      `json:"data"`
+	Pagination Pagination `json:"pagination"`
+}
+
+func (s *TagService) List(ctx context.Context, page *PageRequest) (*ListTagsResult, error) {
+	var out ListTagsResult
+	if err := s.client.get(ctx, "/tags", page.values(), &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &out, nil
 }
 
 func (s *TagService) Get(ctx context.Context, tagID string) (*Tag, error) {
@@ -117,14 +122,6 @@ func (s *TagService) DeleteValue(ctx context.Context, tagID, valueID string) err
 func (s *TagService) Effective(ctx context.Context, entityType, entityID string) ([]map[string]any, error) {
 	var out []map[string]any
 	if err := s.client.get(ctx, "/tags/effective/"+entityType+"/"+entityID, nil, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (s *TagService) History(ctx context.Context, entityType, entityID string) ([]JournalEntry, error) {
-	var out []JournalEntry
-	if err := s.client.get(ctx, "/tags/history/"+entityType+"/"+entityID, nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -19,7 +19,7 @@ type CreateEntryInput struct {
 	CaseID                     string
 	IdentifierLookups          []IdentifierLookup
 	OurIdentifierLookups       []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Originator                 *OriginatorLookup
 	ParentJournalEntryID       string
 	TagLookups                 []TagLookup
@@ -33,7 +33,6 @@ type CreateEntryInput struct {
 	RetractedIdentifierIDs     []string
 	ExternalIdentifiers        []ExternalIdentifierInput
 	ExtractExternalIdentifiers bool
-	AllowConfidenceDecrease    bool
 }
 
 type createEntryBody struct {
@@ -44,7 +43,7 @@ type createEntryBody struct {
 	CaseID                     string                    `json:"case_id,omitempty"`
 	IdentifierLookups          []IdentifierLookup        `json:"identifier_lookups,omitempty"`
 	OurIdentifierLookups       []IdentifierLookup        `json:"our_identifier_lookups,omitempty"`
-	Evidence                   *Evidence                 `json:"evidence,omitempty"`
+	Evidence                   []Evidence                `json:"evidence,omitempty"`
 	OriginatorLookup           *OriginatorLookup         `json:"originator_lookup,omitempty"`
 	ParentJournalEntryID       string                    `json:"parent_journal_entry_id,omitempty"`
 	TagLookups                 []TagLookup               `json:"tag_lookups,omitempty"`
@@ -57,7 +56,6 @@ type createEntryBody struct {
 	RetractedIdentifierIDs     []string                  `json:"retracted_identifier_ids,omitempty"`
 	ExternalIdentifiers        []ExternalIdentifierInput `json:"external_identifiers,omitempty"`
 	ExtractExternalIdentifiers bool                      `json:"extract_external_identifiers,omitempty"`
-	AllowConfidenceDecrease    bool                      `json:"allow_confidence_decrease,omitempty"`
 }
 
 type createEntryResponse struct {
@@ -87,7 +85,6 @@ func (in CreateEntryInput) body() createEntryBody {
 		RetractedIdentifierIDs:     in.RetractedIdentifierIDs,
 		ExternalIdentifiers:        in.ExternalIdentifiers,
 		ExtractExternalIdentifiers: in.ExtractExternalIdentifiers,
-		AllowConfidenceDecrease:    in.AllowConfidenceDecrease,
 	}
 
 	switch {
@@ -154,9 +151,9 @@ func (s *JournalService) Delete(ctx context.Context, entryID string) error {
 }
 
 type ListEntriesOptions struct {
-	Type  EntryType
-	Page  int
-	Limit int
+	Type     EntryType
+	Page     int
+	PageSize int
 }
 
 type listEntriesResponse struct {
@@ -169,20 +166,20 @@ type listEntriesResponse struct {
 
 func (s *JournalService) List(ctx context.Context, opts *ListEntriesOptions) ([]JournalEntry, error) {
 	q := url.Values{}
-	page, limit := 1, 20
+	page, pageSize := 1, 25
 	if opts != nil {
 		if opts.Page > 0 {
 			page = opts.Page
 		}
-		if opts.Limit > 0 {
-			limit = opts.Limit
+		if opts.PageSize > 0 {
+			pageSize = opts.PageSize
 		}
 		if opts.Type != "" {
 			q.Set("type", string(opts.Type))
 		}
 	}
 	q.Set("page", strconv.Itoa(page))
-	q.Set("limit", strconv.Itoa(limit))
+	q.Set("pageSize", strconv.Itoa(pageSize))
 
 	var out listEntriesResponse
 	if err := s.client.get(ctx, "/journal-entries", q, &out); err != nil {

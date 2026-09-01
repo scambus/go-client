@@ -6,20 +6,21 @@ import (
 	"time"
 )
 
-func attachMedia(in *CreateEntryInput, media []Media, fallback Evidence) {
+// attachMedia appends one Evidence record per media item, because the API
+// accepts at most one media id per record. It never writes through to the
+// caller's slice.
+func attachMedia(in *CreateEntryInput, media []Media, template Evidence) {
 	if len(media) == 0 {
 		return
 	}
-	ids := make([]string, len(media))
-	for i, m := range media {
-		ids[i] = m.ID
+	evidence := make([]Evidence, 0, len(in.Evidence)+len(media))
+	evidence = append(evidence, in.Evidence...)
+	for _, m := range media {
+		record := template
+		record.MediaID = m.ID
+		evidence = append(evidence, record)
 	}
-	if in.Evidence == nil {
-		fallback.MediaIDs = ids
-		in.Evidence = &fallback
-		return
-	}
-	in.Evidence.MediaIDs = append(in.Evidence.MediaIDs, ids...)
+	in.Evidence = evidence
 }
 
 func anyMimePrefix(media []Media, prefix string) bool {
@@ -42,7 +43,7 @@ type DetectionInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -78,7 +79,6 @@ func (s *JournalService) CreateDetection(ctx context.Context, in DetectionInput)
 	}
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        evidenceType,
-		Title:       "Detection Evidence",
 		Description: "Evidence for detection: " + in.Description,
 		Source:      "Automated Detection",
 		CollectedAt: nowOr(in.PerformedAt),
@@ -90,7 +90,7 @@ type PhoneCallInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -133,7 +133,6 @@ func (s *JournalService) CreatePhoneCall(ctx context.Context, in PhoneCallInput)
 	}
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        evidenceType,
-		Title:       "Phone Call Evidence",
 		Description: "Evidence for phone call: " + in.Description,
 		Source:      "Phone Call Recording",
 		CollectedAt: in.StartTime,
@@ -145,7 +144,7 @@ type EmailInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -189,7 +188,6 @@ func (s *JournalService) CreateEmail(ctx context.Context, in EmailInput) (*Journ
 	in.applyCommon(&entry)
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        "screenshot",
-		Title:       "Email Evidence",
 		Description: "Evidence for email: " + in.Subject,
 		Source:      "Email Communication",
 		CollectedAt: in.SentAt,
@@ -201,7 +199,7 @@ type TextConversationInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -240,7 +238,6 @@ func (s *JournalService) CreateTextConversation(ctx context.Context, in TextConv
 	in.applyCommon(&entry)
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        "screenshot",
-		Title:       in.Platform + " Conversation Evidence",
 		Description: "Evidence for " + in.Platform + " conversation: " + in.Description,
 		Source:      in.Platform + " Communication",
 		CollectedAt: in.StartTime,
@@ -252,7 +249,7 @@ type ConversationContinuationInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -308,7 +305,6 @@ func (s *JournalService) CreateConversationContinuation(ctx context.Context, in 
 
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        "screenshot",
-		Title:       "Conversation Continuation Evidence",
 		Description: "Evidence for continuation: " + description,
 		Source:      "Conversation Messages",
 		CollectedAt: start,
@@ -320,7 +316,7 @@ type NoteInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -351,7 +347,6 @@ func (s *JournalService) CreateNote(ctx context.Context, in NoteInput) (*Journal
 	}
 	attachMedia(&entry, in.Media, Evidence{
 		Type:        "document",
-		Title:       "Note Evidence",
 		Description: "Evidence for note: " + in.Description,
 		Source:      "Note Attachment",
 		CollectedAt: nowOr(in.PerformedAt),
@@ -363,7 +358,7 @@ type ImportInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup
@@ -390,7 +385,7 @@ type ExportInput struct {
 	Description                string
 	Identifiers                []IdentifierLookup
 	OurIdentifiers             []IdentifierLookup
-	Evidence                   *Evidence
+	Evidence                   []Evidence
 	Media                      []Media
 	CaseID                     string
 	Tags                       []TagLookup

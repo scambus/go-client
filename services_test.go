@@ -100,7 +100,9 @@ func TestUpdateCaseRefetchesAfter204(t *testing.T) {
 	})
 	c := srv.client(t)
 
-	updated, err := c.Cases.Update(context.Background(), "c1", UpdateCaseInput{Status: Ptr("closed")})
+	updated, err := c.Cases.Update(context.Background(), "c1", UpdateCaseInput{
+		Status: Ptr("closed"), Resolution: Ptr(ResolutionResolved), ClosureNotes: Ptr("done"),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +143,7 @@ func TestCreateCaseAppliesDefaults(t *testing.T) {
 
 func TestClaimQueueItemReturnsNilWhenEmpty(t *testing.T) {
 	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, 404, map[string]string{"error": "no claimable items"})
+		writeJSON(t, w, 404, map[string]string{"message": "No items available to claim"})
 	})
 	c := srv.client(t)
 
@@ -285,18 +287,40 @@ func TestPollDecodesTypedMessages(t *testing.T) {
 	}
 }
 
-func TestPollTreatsNoContentAsEmpty(t *testing.T) {
+func TestClaimSurfacesAMissingQueue(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("Queue not found"))
+	})
+	c := srv.client(t)
+
+	if _, err := c.Queues.Claim(context.Background(), "typo"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a bad queue id must not read as an empty queue: %v", err)
+	}
+}
+
+func TestCloseCaseRequiresResolutionAndNotes(t *testing.T) {
 	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	c := srv.client(t)
+	ctx := context.Background()
 
-	result, err := c.Consume.Poll(context.Background(), "ck", nil)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := c.Cases.Update(ctx, "c1", UpdateCaseInput{Status: Ptr("closed")}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("missing resolution: %v", err)
 	}
-	if len(result.Messages) != 0 || result.HasMore {
-		t.Fatalf("got %+v", result)
+	if _, err := c.Cases.Update(ctx, "c1", UpdateCaseInput{
+		Status: Ptr("closed"), Resolution: Ptr("made-up"), ClosureNotes: Ptr("x"),
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("bad resolution: %v", err)
+	}
+	if _, err := c.Cases.Update(ctx, "c1", UpdateCaseInput{
+		Status: Ptr("closed"), Resolution: Ptr(ResolutionResolved),
+	}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("missing closure notes: %v", err)
+	}
+	if len(srv.requests) != 0 {
+		t.Fatal("nothing should reach the API")
 	}
 }
 

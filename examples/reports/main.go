@@ -36,11 +36,11 @@ func main() {
 		log.Fatal(err)
 	}
 	if report.IsFailed() {
-		log.Fatalf("report failed: %s", report.ErrorMessage)
+		log.Fatalf("report %s failed", report.ID)
 	}
 
 	if err := client.Reports.DownloadToFile(ctx, report.ID, "report.pdf"); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("saved report.pdf (%d identifiers, %d entries)\n", report.IdentifierCount, report.JournalEntryCount)
+	fmt.Printf("saved report.pdf (generated %s)\n", report.GeneratedAt.Format(time.RFC3339))
 }

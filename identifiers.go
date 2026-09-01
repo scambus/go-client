@@ -13,9 +13,9 @@ import (
 type IdentifierService struct{ client *Client }
 
 type ListIdentifiersOptions struct {
-	Type  IdentifierType
-	Page  int
-	Limit int
+	Type     IdentifierType
+	Page     int
+	PageSize int
 }
 
 type listIdentifiersResponse struct {
@@ -25,20 +25,20 @@ type listIdentifiersResponse struct {
 
 func (s *IdentifierService) List(ctx context.Context, opts *ListIdentifiersOptions) ([]Identifier, error) {
 	q := url.Values{}
-	page, limit := 1, 20
+	page, pageSize := 1, 25
 	if opts != nil {
 		if opts.Page > 0 {
 			page = opts.Page
 		}
-		if opts.Limit > 0 {
-			limit = opts.Limit
+		if opts.PageSize > 0 {
+			pageSize = opts.PageSize
 		}
 		if opts.Type != "" {
 			q.Set("type", string(opts.Type))
 		}
 	}
 	q.Set("page", strconv.Itoa(page))
-	q.Set("limit", strconv.Itoa(limit))
+	q.Set("pageSize", strconv.Itoa(pageSize))
 
 	var out listIdentifiersResponse
 	if err := s.client.get(ctx, "/identifiers", q, &out); err != nil {

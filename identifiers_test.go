@@ -105,7 +105,7 @@ func TestListIdentifiersDefaultsPaging(t *testing.T) {
 	if len(got) != 1 || got[0].Confidence.Score != 0.5 {
 		t.Fatalf("got %+v", got)
 	}
-	if srv.last().Query != "limit=20&page=1" {
+	if srv.last().Query != "page=1&pageSize=25" {
 		t.Fatalf("query %q", srv.last().Query)
 	}
 }

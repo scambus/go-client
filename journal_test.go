@@ -201,14 +201,73 @@ func TestCreateDetectionBuildsEvidenceFromMedia(t *testing.T) {
 	}
 
 	var body struct {
-		Evidence Evidence `json:"evidence"`
+		Evidence []Evidence `json:"evidence"`
 	}
 	srv.requests[0].decode(t, &body)
-	if body.Evidence.Type != "screenshot" {
-		t.Fatalf("evidence type %q", body.Evidence.Type)
+	if len(body.Evidence) != 1 {
+		t.Fatalf("want one evidence record, got %d", len(body.Evidence))
 	}
-	if len(body.Evidence.MediaIDs) != 1 || body.Evidence.MediaIDs[0] != "m1" {
-		t.Fatalf("media ids %v", body.Evidence.MediaIDs)
+	if body.Evidence[0].Type != "screenshot" {
+		t.Fatalf("evidence type %q", body.Evidence[0].Type)
+	}
+	if body.Evidence[0].MediaID != "m1" {
+		t.Fatalf("media id %q", body.Evidence[0].MediaID)
+	}
+}
+
+func TestEachMediaItemGetsItsOwnEvidenceRecord(t *testing.T) {
+	srv := createEntryServer(t, map[string]any{"id": "e1", "type": "detection"}, map[string]any{"id": "e1"})
+	c := srv.client(t)
+
+	_, err := c.Journal.CreateDetection(context.Background(), DetectionInput{
+		Description: "three shots",
+		Media: []Media{
+			{ID: "m1", MimeType: "image/png"},
+			{ID: "m2", MimeType: "image/png"},
+			{ID: "m3", MimeType: "image/png"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var body struct {
+		Evidence []Evidence `json:"evidence"`
+	}
+	srv.requests[0].decode(t, &body)
+	if len(body.Evidence) != 3 {
+		t.Fatalf("the API accepts one media id per record: got %d records", len(body.Evidence))
+	}
+	for i, want := range []string{"m1", "m2", "m3"} {
+		if body.Evidence[i].MediaID != want {
+			t.Fatalf("record %d has media id %q, want %q", i, body.Evidence[i].MediaID, want)
+		}
+	}
+}
+
+func TestAttachMediaDoesNotMutateCallerEvidence(t *testing.T) {
+	srv := createEntryServer(t, map[string]any{"id": "e1", "type": "detection"}, map[string]any{"id": "e1"})
+	c := srv.client(t)
+
+	shared := []Evidence{{Type: "document", Description: "mine"}}
+	in := DetectionInput{Description: "first", Evidence: shared, Media: []Media{{ID: "m1"}}}
+
+	if _, err := c.Journal.CreateDetection(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Journal.CreateDetection(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(shared) != 1 {
+		t.Fatalf("caller slice was written through: len %d", len(shared))
+	}
+	var second struct {
+		Evidence []Evidence `json:"evidence"`
+	}
+	srv.requests[2].decode(t, &second)
+	if len(second.Evidence) != 2 {
+		t.Fatalf("reuse leaked media between entries: %d records on the second call", len(second.Evidence))
 	}
 }
 
@@ -218,7 +277,7 @@ func TestCreateDetectionAppendsMediaToSuppliedEvidence(t *testing.T) {
 
 	_, err := c.Journal.CreateDetection(context.Background(), DetectionInput{
 		Description: "phishing site",
-		Evidence:    &Evidence{Type: "document", Title: "mine", MediaIDs: []string{"m0"}},
+		Evidence:    []Evidence{{Type: "document", Description: "mine", MediaID: "m0"}},
 		Media:       []Media{{ID: "m1", MimeType: "image/png"}},
 	})
 	if err != nil {
@@ -226,14 +285,17 @@ func TestCreateDetectionAppendsMediaToSuppliedEvidence(t *testing.T) {
 	}
 
 	var body struct {
-		Evidence Evidence `json:"evidence"`
+		Evidence []Evidence `json:"evidence"`
 	}
 	srv.requests[0].decode(t, &body)
-	if body.Evidence.Title != "mine" {
-		t.Fatalf("supplied evidence must survive, got %+v", body.Evidence)
+	if len(body.Evidence) != 2 {
+		t.Fatalf("want the supplied record plus one per media, got %d", len(body.Evidence))
 	}
-	if len(body.Evidence.MediaIDs) != 2 {
-		t.Fatalf("media ids %v", body.Evidence.MediaIDs)
+	if body.Evidence[0].Description != "mine" || body.Evidence[0].MediaID != "m0" {
+		t.Fatalf("supplied evidence must survive, got %+v", body.Evidence[0])
+	}
+	if body.Evidence[1].MediaID != "m1" {
+		t.Fatalf("media record %+v", body.Evidence[1])
 	}
 }
 
@@ -251,11 +313,11 @@ func TestCreatePhoneCallPicksRecordingEvidenceForAudio(t *testing.T) {
 	}
 
 	var body struct {
-		Evidence Evidence `json:"evidence"`
+		Evidence []Evidence `json:"evidence"`
 	}
 	srv.requests[0].decode(t, &body)
-	if body.Evidence.Type != "recording" {
-		t.Fatalf("got %q", body.Evidence.Type)
+	if len(body.Evidence) != 1 || body.Evidence[0].Type != "recording" {
+		t.Fatalf("got %+v", body.Evidence)
 	}
 }
 
@@ -322,14 +384,14 @@ func TestListEntriesUnwrapsDataItems(t *testing.T) {
 	})
 	c := srv.client(t)
 
-	entries, err := c.Journal.List(context.Background(), &ListEntriesOptions{Type: EntryTypeNote, Page: 2, Limit: 5})
+	entries, err := c.Journal.List(context.Background(), &ListEntriesOptions{Type: EntryTypeNote, Page: 2, PageSize: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(entries) != 2 || entries[1].ID != "e2" {
 		t.Fatalf("got %+v", entries)
 	}
-	if q := srv.last().Query; q != "limit=5&page=2&type=note" {
+	if q := srv.last().Query; q != "page=2&pageSize=5&type=note" {
 		t.Fatalf("query %q", q)
 	}
 }
@@ -466,7 +528,7 @@ func TestBatchCreateWrapsEntries(t *testing.T) {
 	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, 200, map[string]any{
 			"results": []any{map[string]any{"index": 0, "status": "created", "id": "e1"}},
-			"total":   1, "succeeded": 1, "failed": 0,
+			"summary": map[string]any{"total": 1, "succeeded": 1, "failed": 0},
 		})
 	})
 	c := srv.client(t)
@@ -477,7 +539,7 @@ func TestBatchCreateWrapsEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Succeeded != 1 || result.Results[0].ID != "e1" {
+	if result.Summary.Succeeded != 1 || result.Results[0].ID != "e1" {
 		t.Fatalf("got %+v", result)
 	}
 

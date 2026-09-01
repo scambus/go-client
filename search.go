@@ -67,19 +67,42 @@ func (s *SearchService) IdentifiersAll(ctx context.Context, in SearchIdentifiers
 	}
 }
 
+// SearchCasesInput is camelCase on the wire, unlike the identifier search.
 type SearchCasesInput struct {
-	Query  string `json:"query,omitempty"`
-	Status string `json:"status,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
+	SearchQuery        string   `json:"searchQuery,omitempty"`
+	Status             []string `json:"status,omitempty"`
+	Priority           []string `json:"priority,omitempty"`
+	Category           string   `json:"category,omitempty"`
+	Tags               []string `json:"tags,omitempty"`
+	AssignedTo         string   `json:"assignedTo,omitempty"`
+	CreatedBy          string   `json:"createdBy,omitempty"`
+	Resolution         string   `json:"resolution,omitempty"`
+	CreatedAfter       string   `json:"createdAfter,omitempty"`
+	CreatedBefore      string   `json:"createdBefore,omitempty"`
+	UpdatedAfter       string   `json:"updatedAfter,omitempty"`
+	UpdatedBefore      string   `json:"updatedBefore,omitempty"`
+	ClosedAfter        string   `json:"closedAfter,omitempty"`
+	ClosedBefore       string   `json:"closedBefore,omitempty"`
+	IncludesIdentifier string   `json:"includesIdentifier,omitempty"`
+	TeamMemberInvolved string   `json:"teamMemberInvolved,omitempty"`
+	Cursor             string   `json:"cursor,omitempty"`
+	Limit              int      `json:"limit,omitempty"`
+	IsTest             *bool    `json:"isTest,omitempty"`
 }
 
-func (s *SearchService) Cases(ctx context.Context, in SearchCasesInput) ([]Case, error) {
+type SearchCasesResult struct {
+	Data       []Case `json:"data"`
+	NextCursor string `json:"nextCursor"`
+	HasMore    bool   `json:"hasMore"`
+}
+
+func (s *SearchService) Cases(ctx context.Context, in SearchCasesInput) (*SearchCasesResult, error) {
 	if in.Limit <= 0 {
 		in.Limit = 50
 	}
-	var out []Case
+	var out SearchCasesResult
 	if err := s.client.post(ctx, "/search/cases", in, &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &out, nil
 }
