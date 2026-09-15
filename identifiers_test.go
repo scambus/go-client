@@ -90,6 +90,58 @@ func TestChimeLookup(t *testing.T) {
 	}
 }
 
+func TestDeltaChatLookupAcceptedForms(t *testing.T) {
+	const want = "8D2A4F1C0B3E5A7D9C1F2E3B4A5C6D7E8F9A0B1C"
+	cases := []string{
+		want,
+		strings.ToLower(want),
+		"8D2A 4F1C 0B3E 5A7D 9C1F 2E3B 4A5C 6D7E 8F9A 0B1C",
+		"8D2A:4F1C:0B3E:5A7D:9C1F:2E3B:4A5C:6D7E:8F9A:0B1C",
+		"https://i.delta.chat/#" + strings.ToLower(want) + "&a=scammer%40nine.testrun.org&n=Support&i=AbCdEf&s=GhIjKl",
+		"i.delta.chat/#" + want + "&a=scammer%40nine.testrun.org",
+		want + "&a=scammer%40nine.testrun.org",
+		"OPENPGP4FPR:" + want + "#a=scammer%40nine.testrun.org&n=Support&i=AbCdEf&s=GhIjKl",
+	}
+	for _, input := range cases {
+		lookup, err := DeltaChatLookup(input, Ptr(0.9))
+		if err != nil {
+			t.Fatalf("%s: %v", input, err)
+		}
+		if lookup.Type != IdentifierTypeSocialMedia {
+			t.Fatalf("%s: type %q", input, lookup.Type)
+		}
+		var details SocialMediaDetails
+		if err := json.Unmarshal([]byte(lookup.Value), &details); err != nil {
+			t.Fatal(err)
+		}
+		if details.Platform != "deltachat" || details.Handle != want {
+			t.Fatalf("%s: got %+v", input, details)
+		}
+		if lookup.Confidence == nil || *lookup.Confidence != 0.9 {
+			t.Fatalf("%s: confidence %v", input, lookup.Confidence)
+		}
+	}
+}
+
+func TestDeltaChatLookupRejectedForms(t *testing.T) {
+	cases := map[string]string{
+		"too short":    "8D2A4F1C",
+		"too long":     "8D2A4F1C0B3E5A7D9C1F2E3B4A5C6D7E8F9A0B1CAB",
+		"not hex":      "GD2A4F1C0B3E5A7D9C1F2E3B4A5C6D7E8F9A0B1C",
+		"at prefix":    "@8D2A4F1C0B3E5A7D9C1F2E3B4A5C6D7E8F9A0B1C",
+		"email":        "scammer@nine.testrun.org",
+		"wrong host":   "https://delta.chat/#8D2A4F1C0B3E5A7D9C1F2E3B4A5C6D7E8F9A0B1C",
+		"bare invite":  "https://i.delta.chat/",
+		"junk invite":  "https://i.delta.chat/#not-a-fingerprint&a=x",
+		"empty string": "",
+	}
+	for name, input := range cases {
+		if _, err := DeltaChatLookup(input, nil); !errors.Is(err, ErrValidation) {
+			t.Fatalf("%s (%s): want a validation error, got %v", name, input, err)
+		}
+	}
+}
+
 func TestListIdentifiersDefaultsPaging(t *testing.T) {
 	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, 200, map[string]any{

@@ -177,10 +177,46 @@ func BankAccountLookup(in BankAccountInput) (IdentifierLookup, error) {
 }
 
 var (
-	venmoUserID   = regexp.MustCompile(`^\d{16,19}$`)
-	venmoUsername = regexp.MustCompile(`^@[a-zA-Z0-9_-]{5,30}$`)
-	chimeSign     = regexp.MustCompile(`^\$[a-zA-Z0-9_]{1,20}$`)
+	venmoUserID          = regexp.MustCompile(`^\d{16,19}$`)
+	venmoUsername        = regexp.MustCompile(`^@[a-zA-Z0-9_-]{5,30}$`)
+	chimeSign            = regexp.MustCompile(`^\$[a-zA-Z0-9_]{1,20}$`)
+	deltaChatFingerprint = regexp.MustCompile(`^[0-9A-F]{40}$`)
+	deltaChatSeparators  = strings.NewReplacer(" ", "", "-", "", ":", "", "\t", "")
 )
+
+// DeltaChatLookup accepts an OpenPGP key fingerprint (bare or grouped in
+// fours), an https://i.delta.chat/#... invite link, or an OPENPGP4FPR: QR
+// payload, and stores the fingerprint bare and uppercase.
+func DeltaChatLookup(fingerprint string, confidence *float64) (IdentifierLookup, error) {
+	rest := strings.TrimSpace(fingerprint)
+	if strings.HasPrefix(strings.ToLower(rest), "openpgp4fpr:") {
+		rest = rest[len("openpgp4fpr:"):]
+	} else {
+		link := rest
+		if !strings.Contains(link, "://") {
+			link = "https://" + link
+		}
+		if parsed, err := url.Parse(link); err == nil && strings.EqualFold(parsed.Hostname(), "i.delta.chat") {
+			rest = parsed.Fragment
+		}
+	}
+	if end := strings.IndexAny(rest, "&#"); end >= 0 {
+		rest = rest[:end]
+	}
+	bare := strings.ToUpper(deltaChatSeparators.Replace(strings.TrimSpace(rest)))
+	if !deltaChatFingerprint.MatchString(bare) {
+		return IdentifierLookup{}, fmt.Errorf("%w: Delta Chat fingerprint must be 40 hexadecimal characters", ErrValidation)
+	}
+	value, err := json.Marshal(SocialMediaDetails{Platform: "deltachat", Handle: bare})
+	if err != nil {
+		return IdentifierLookup{}, err
+	}
+	return IdentifierLookup{
+		Type:       IdentifierTypeSocialMedia,
+		Value:      string(value),
+		Confidence: confidence,
+	}, nil
+}
 
 // VenmoLookup accepts an @username, a 16-19 digit user id, or a
 // venmo.com/code QR URL.

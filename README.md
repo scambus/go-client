@@ -351,6 +351,14 @@ venmo, err := scambus.VenmoLookup("@scammer_handle", "Some Name", nil)
 chime, err := scambus.ChimeLookup("$JohnDoe", "John", nil)
 ```
 
+A Delta Chat account is identified by its OpenPGP key fingerprint. The
+builder accepts the bare or grouped fingerprint, an `https://i.delta.chat/#...`
+invite link, or an `OPENPGP4FPR:` QR payload:
+
+```go
+dc, err := scambus.DeltaChatLookup("8D2A 4F1C 0B3E 5A7D 9C1F 2E3B 4A5C 6D7E 8F9A 0B1C", scambus.Ptr(0.9))
+```
+
 ## Timestamps and confidence
 
 `scambus.Time` accepts RFC3339 with or without a zone and reads a naive value
