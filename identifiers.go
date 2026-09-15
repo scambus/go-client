@@ -191,15 +191,14 @@ func DeltaChatLookup(fingerprint string, confidence *float64) (IdentifierLookup,
 	rest := strings.TrimSpace(fingerprint)
 	if strings.HasPrefix(strings.ToLower(rest), "openpgp4fpr:") {
 		rest = rest[len("openpgp4fpr:"):]
-	} else if strings.Contains(rest, "://") {
-		parsed, err := url.Parse(rest)
-		if err != nil {
-			return IdentifierLookup{}, fmt.Errorf("%w: invalid Delta Chat invite link: %w", ErrValidation, err)
+	} else {
+		link := rest
+		if !strings.Contains(link, "://") {
+			link = "https://" + link
 		}
-		if !strings.EqualFold(parsed.Hostname(), "i.delta.chat") {
-			return IdentifierLookup{}, fmt.Errorf("%w: Delta Chat invite link must be from i.delta.chat, got %q", ErrValidation, parsed.Hostname())
+		if parsed, err := url.Parse(link); err == nil && strings.EqualFold(parsed.Hostname(), "i.delta.chat") {
+			rest = parsed.Fragment
 		}
-		rest = parsed.Fragment
 	}
 	if end := strings.IndexAny(rest, "&#"); end >= 0 {
 		rest = rest[:end]

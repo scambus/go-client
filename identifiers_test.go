@@ -98,6 +98,8 @@ func TestDeltaChatLookupAcceptedForms(t *testing.T) {
 		"8D2A 4F1C 0B3E 5A7D 9C1F 2E3B 4A5C 6D7E 8F9A 0B1C",
 		"8D2A:4F1C:0B3E:5A7D:9C1F:2E3B:4A5C:6D7E:8F9A:0B1C",
 		"https://i.delta.chat/#" + strings.ToLower(want) + "&a=scammer%40nine.testrun.org&n=Support&i=AbCdEf&s=GhIjKl",
+		"i.delta.chat/#" + want + "&a=scammer%40nine.testrun.org",
+		want + "&a=scammer%40nine.testrun.org",
 		"OPENPGP4FPR:" + want + "#a=scammer%40nine.testrun.org&n=Support&i=AbCdEf&s=GhIjKl",
 	}
 	for _, input := range cases {
