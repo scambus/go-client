@@ -281,9 +281,30 @@ func (c *Client) do(ctx context.Context, r request) (*http.Response, error) {
 	if c.timeout > 0 && !r.stream {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
-		defer cancel()
+		resp, err := c.doWithin(ctx, r, start, attempt)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		// The body is read after do returns, so the timeout ends when the caller closes it.
+		resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
+		return resp, nil
 	}
+	return c.doWithin(ctx, r, start, attempt)
+}
 
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *cancelOnClose) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
+}
+
+func (c *Client) doWithin(ctx context.Context, r request, start time.Time, attempt int) (*http.Response, error) {
 	for {
 		req, err := c.newHTTPRequest(ctx, r)
 		if err != nil {
