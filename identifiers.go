@@ -55,6 +55,42 @@ func (s *IdentifierService) Get(ctx context.Context, identifierID string) (*Iden
 	return &out, nil
 }
 
+const (
+	PanoptesScanRunning  = "running"
+	PanoptesScanComplete = "complete"
+	PanoptesScanTimeout  = "timeout"
+	PanoptesScanError    = "error"
+)
+
+// PanoptesScan is the newest Panoptes scan SCAMBUS recorded for a url identifier.
+type PanoptesScan struct {
+	ID                string `json:"id"`
+	IdentifierID      string `json:"identifier_id"`
+	TargetURL         string `json:"target_url"`
+	Host              string `json:"host"`
+	RegistrableDomain string `json:"registrable_domain"`
+	Status            string `json:"status"`
+	WarningLevel      string `json:"warning_level"`
+	Category          string `json:"category"`
+	Details           string `json:"details"`
+	Block             bool   `json:"block"`
+	PermalinkURL      string `json:"permalink_url"`
+	ScannedAt         Time   `json:"scanned_at"`
+}
+
+func (s *PanoptesScan) Settled() bool { return s.Status != PanoptesScanRunning }
+
+// PanoptesScan returns nil with no error when no scan is recorded yet.
+func (s *IdentifierService) PanoptesScan(ctx context.Context, identifierID string) (*PanoptesScan, error) {
+	var out struct {
+		Scan *PanoptesScan `json:"scan"`
+	}
+	if err := s.client.get(ctx, "/identifiers/"+identifierID+"/panoptes-scan", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Scan, nil
+}
+
 type URLReferencesOptions struct {
 	Page     int
 	PageSize int

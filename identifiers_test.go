@@ -194,3 +194,52 @@ func TestURLReferencesDefaults(t *testing.T) {
 		t.Fatalf("query %q, want %q", srv.last().Query, want)
 	}
 }
+
+func TestPanoptesScanDecodesVerdict(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, 200, map[string]any{
+			"scan": map[string]any{
+				"status": "complete", "warning_level": "flagged", "category": "phishing",
+				"details": "Credential form", "target_url": "https://bad.example/login",
+				"scanned_at": "2026-11-13T10:00:00Z",
+			},
+			"groups": []any{},
+		})
+	})
+	c := srv.client(t)
+
+	scan, err := c.Identifiers.PanoptesScan(context.Background(), "i1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.last().Path != "/api/identifiers/i1/panoptes-scan" {
+		t.Fatalf("path %q", srv.last().Path)
+	}
+	if scan == nil || scan.Status != PanoptesScanComplete || scan.WarningLevel != "flagged" || scan.Category != "phishing" {
+		t.Fatalf("got %+v", scan)
+	}
+	if !scan.Settled() {
+		t.Fatal("a complete scan is settled")
+	}
+}
+
+func TestPanoptesScanNoneRecorded(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, 200, map[string]any{"scan": nil, "groups": []any{}})
+	})
+	c := srv.client(t)
+
+	scan, err := c.Identifiers.PanoptesScan(context.Background(), "i1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scan != nil {
+		t.Fatalf("want nil, got %+v", scan)
+	}
+}
+
+func TestPanoptesScanRunningIsNotSettled(t *testing.T) {
+	if (&PanoptesScan{Status: PanoptesScanRunning}).Settled() {
+		t.Fatal("a running scan is not settled")
+	}
+}

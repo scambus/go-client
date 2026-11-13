@@ -112,7 +112,7 @@ Calls are grouped by resource. Every method takes a `context.Context` first.
 | Service | Covers |
 |---------|--------|
 | `client.Journal` | Journal entries, batch create, query, activities |
-| `client.Identifiers` | Identifiers, exclusions, URL references, lookup builders |
+| `client.Identifiers` | Identifiers, exclusions, URL references, Panoptes scans, lookup builders |
 | `client.Cases` | Cases and case comments |
 | `client.Comments` | Comment edit and delete |
 | `client.Queues` | Work queues and queue items |
