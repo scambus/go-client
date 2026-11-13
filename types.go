@@ -101,10 +101,14 @@ type SortOrder struct {
 	Direction string `json:"direction"`
 }
 
+// OriginatorLookup names the user or automation an entry is created on behalf of. Type is "user" (email or Clerk
+// user ID), "discord" (the Discord user ID a SCAMBUS user linked) or "automation" (automation name).
 type OriginatorLookup struct {
 	Type             string `json:"type"`
 	Identifier       string `json:"identifier"`
 	CreateIfNotExist bool   `json:"create_if_not_exists"`
+	// FallbackToAnonymous gives the entry to the anonymous reporter when the lookup matches nobody.
+	FallbackToAnonymous bool `json:"fallback_to_anonymous,omitempty"`
 }
 
 type ExternalIdentifierInput struct {

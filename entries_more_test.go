@@ -364,3 +364,33 @@ func TestReportIsFailed(t *testing.T) {
 		t.Fatal("completed report reported as failed")
 	}
 }
+
+func TestOriginatorLookupSendsDiscordFallback(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			writeJSON(t, w, 201, map[string]any{"id": "e1"})
+			return
+		}
+		writeJSON(t, w, 200, map[string]any{"journal_entry": map[string]any{"journal_entry": map[string]any{"id": "e1"}}})
+	})
+	c := srv.client(t)
+
+	_, err := c.Journal.CreateDetection(context.Background(), DetectionInput{
+		Description: "url posted in discord",
+		Originator:  &OriginatorLookup{Type: "discord", Identifier: "123456789012345678", CreateIfNotExist: true, FallbackToAnonymous: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var raw struct {
+		OriginatorLookup map[string]any `json:"originator_lookup"`
+	}
+	srv.requests[0].decode(t, &raw)
+	want := map[string]any{"type": "discord", "identifier": "123456789012345678", "create_if_not_exists": true, "fallback_to_anonymous": true}
+	for key, value := range want {
+		if raw.OriginatorLookup[key] != value {
+			t.Fatalf("originator_lookup.%s = %v, want %v (body %v)", key, raw.OriginatorLookup[key], value, raw.OriginatorLookup)
+		}
+	}
+}
