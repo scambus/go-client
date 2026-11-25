@@ -94,10 +94,10 @@ client, err := scambus.New(
 Transient failures retry with full-jitter exponential backoff and honour
 `Retry-After`. Cancelling the context stops the retry loop.
 
-A 408 or 429 means the server did not process the request, so any method is
-replayed. A 5xx or a dropped connection may follow a committed write, so only
-idempotent methods are replayed there — a failed `POST` is reported, never
-repeated.
+A 408, a 429 or a 503 with `Retry-After` means the server did not process the
+request, so any method is replayed. Another 5xx or a dropped connection may
+follow a committed write, so only idempotent methods are replayed there. Such a
+failed `POST` is reported, never repeated.
 
 The client refuses HTTP redirects: credentials travel in headers, and Go
 forwards a custom header such as `X-API-Key` across a host boundary.
@@ -193,6 +193,24 @@ entry, err := client.Journal.CreateDetection(ctx, scambus.DetectionInput{
 
 For an entry type without a constructor, use `Journal.Create` with
 `CreateEntryInput`.
+
+An automation can carry a provider check result on a detection. SCAMBUS asks the
+provider for the result that `Ref` names and stores the provider's answer:
+
+```go
+entry, err := client.Journal.CreateDetection(ctx, scambus.DetectionInput{
+	Description: "Phishing site",
+	Identifiers: []scambus.IdentifierLookup{{Type: scambus.IdentifierTypeURL, Value: target, Ref: "target"}},
+	CarriedChecks: []scambus.CarriedCheck{{
+		Provider: "panoptes", IdentifierRef: "target",
+		Block: scambus.CarriedBlock{Ref: requestID, Corrects: earlierRequestID},
+	}},
+})
+```
+
+When an existing entry already holds the result, SCAMBUS creates no entry. The
+returned entry then has `Absorbed` set, and its `ID` names the entry that holds
+the result.
 
 ## Filtering
 

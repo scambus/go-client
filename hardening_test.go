@@ -113,6 +113,41 @@ func TestPostIsRetriedWhenServerSaysItDidNotProcess(t *testing.T) {
 	}
 }
 
+func TestPostIsRetriedOnUnavailableWithRetryAfterOnly(t *testing.T) {
+	for name, tc := range map[string]struct {
+		retryAfter string
+		posts      int32
+	}{
+		"with Retry-After":    {retryAfter: "0", posts: 2},
+		"without Retry-After": {posts: 1},
+	} {
+		var posts atomic.Int32
+		srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				if posts.Add(1) < 2 {
+					if tc.retryAfter != "" {
+						w.Header().Set("Retry-After", tc.retryAfter)
+					}
+					writeJSON(t, w, 503, map[string]string{"error": "provider cannot answer now"})
+					return
+				}
+				writeJSON(t, w, 201, map[string]any{"id": "e1"})
+				return
+			}
+			writeJSON(t, w, 200, journalEntryResponse(map[string]any{"id": "e1", "type": "note"}))
+		})
+		c := srv.client(t, WithMaxRetries(5), WithRetryMaxTime(10*time.Second))
+
+		_, err := c.Journal.Create(context.Background(), CreateEntryInput{Type: EntryTypeNote, Description: "x"})
+		if posts.Load() != tc.posts {
+			t.Fatalf("%s: %d attempts, want %d", name, posts.Load(), tc.posts)
+		}
+		if (tc.posts == 1) != errors.Is(err, ErrServer) {
+			t.Fatalf("%s: got %v", name, err)
+		}
+	}
+}
+
 func TestIdempotentMethodsStillRetryOnServerFault(t *testing.T) {
 	var gets atomic.Int32
 	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {

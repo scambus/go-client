@@ -44,10 +44,11 @@ ErrCursorExpired and ErrServer.
 # Retries
 
 Transient failures retry with full-jitter exponential backoff, honouring
-Retry-After and bounded by WithMaxRetries and WithRetryMaxTime. A 408 or 429
-means the server did not process the request, so any method is replayed. A 5xx
-or a dropped connection may follow a committed write, so only idempotent
-methods are replayed there; a failed POST is reported, never repeated.
+Retry-After and bounded by WithMaxRetries and WithRetryMaxTime. A 408, a 429
+or a 503 with Retry-After means the server did not process the request, so
+any method is replayed. Another 5xx or a dropped connection may follow a
+committed write, so only idempotent methods are replayed there; such a failed
+POST is reported, never repeated.
 Cancelling the context stops the retry loop.
 
 The client refuses HTTP redirects. Credentials travel in headers, and Go

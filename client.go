@@ -26,19 +26,22 @@ const (
 	retryThrottleBase = 2 * time.Second
 )
 
-// 408 and 429 mean the server did not process the request, so any method may
-// be replayed. A 5xx may follow a committed write, so only idempotent methods
-// are retried on those.
+// 408, 429 and a 503 with Retry-After mean the server did not process the
+// request, so any method may be replayed. Another 5xx may follow a committed
+// write, so only idempotent methods are retried on those.
 var (
 	notProcessedStatus = map[int]bool{408: true, 429: true}
 	serverFaultStatus  = map[int]bool{500: true, 502: true, 503: true, 504: true}
 )
 
-func retryableFor(method string, status int) bool {
-	if notProcessedStatus[status] {
+func retryableFor(method string, resp *http.Response) bool {
+	if notProcessedStatus[resp.StatusCode] {
 		return true
 	}
-	return serverFaultStatus[status] && idempotent(method)
+	if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("Retry-After") != "" {
+		return true
+	}
+	return serverFaultStatus[resp.StatusCode] && idempotent(method)
 }
 
 type Client struct {
@@ -333,7 +336,7 @@ func (c *Client) doWithin(ctx context.Context, r request, start time.Time, attem
 			return resp, nil
 		}
 
-		if retryableFor(r.method, resp.StatusCode) {
+		if retryableFor(r.method, resp) {
 			elapsed := time.Since(start)
 			if attempt < c.maxRetries && elapsed < c.retryMaxTime {
 				attempt++
