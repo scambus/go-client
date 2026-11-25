@@ -54,6 +54,7 @@ type DetectionInput struct {
 	IsTest                     bool
 	ExternalIdentifiers        []ExternalIdentifierInput
 	ExtractExternalIdentifiers bool
+	CarriedChecks              []CarriedCheck
 	Details                    *DetectionDetails
 	PerformedAt                Time
 	StartTime                  Time
@@ -442,6 +443,7 @@ func (in DetectionInput) applyCommon(entry *CreateEntryInput) {
 	entry.IsTest = in.IsTest
 	entry.ExternalIdentifiers = in.ExternalIdentifiers
 	entry.ExtractExternalIdentifiers = in.ExtractExternalIdentifiers
+	entry.CarriedChecks = in.CarriedChecks
 }
 
 func (in PhoneCallInput) applyCommon(entry *CreateEntryInput) {

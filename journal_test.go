@@ -77,6 +77,50 @@ func TestCreateEntryCarriesFailedAndExtractedIdentifiers(t *testing.T) {
 	}
 }
 
+func TestCreateDetectionSendsCarriedChecks(t *testing.T) {
+	srv := createEntryServer(t, map[string]any{"id": "e1", "type": "detection"}, map[string]any{"id": "e1"})
+	c := srv.client(t)
+
+	entry, err := c.Journal.CreateDetection(context.Background(), DetectionInput{
+		Description: "d",
+		Identifiers: []IdentifierLookup{{Type: IdentifierTypeURL, Value: "https://x.test/", Ref: "target"}},
+		CarriedChecks: []CarriedCheck{{
+			Provider: "panoptes", IdentifierRef: "target", Block: CarriedBlock{Ref: "req-2", Corrects: "req-1"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.ID != "e1" || entry.Absorbed {
+		t.Fatalf("got %+v", entry)
+	}
+	var body map[string]any
+	srv.requests[0].decode(t, &body)
+	want := []any{map[string]any{
+		"provider": "panoptes", "identifier_ref": "target",
+		"block": map[string]any{"ref": "req-2", "corrects": "req-1"},
+	}}
+	if !reflect.DeepEqual(body["carried_checks"], want) {
+		t.Fatalf("carried_checks = %#v", body["carried_checks"])
+	}
+}
+
+func TestCreateEntryAbsorbedIsNotReloaded(t *testing.T) {
+	srv := createEntryServer(t, map[string]any{"id": "holder"}, map[string]any{"id": "holder", "absorbed": true})
+	c := srv.client(t)
+
+	entry, err := c.Journal.Create(context.Background(), CreateEntryInput{Type: EntryTypeDetection, Description: "d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.ID != "holder" || !entry.Absorbed {
+		t.Fatalf("got %+v", entry)
+	}
+	if len(srv.requests) != 1 {
+		t.Fatalf("an absorbed create made %d requests, want only the POST", len(srv.requests))
+	}
+}
+
 func TestCreateEntryRejectsMissingType(t *testing.T) {
 	srv := createEntryServer(t, map[string]any{"id": "e1"}, map[string]any{"id": "e1"})
 	c := srv.client(t)

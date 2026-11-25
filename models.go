@@ -81,6 +81,9 @@ type JournalEntry struct {
 	FailedIdentifiers    []FailedIdentifier         `json:"failed_identifiers,omitempty"`
 	ExtractedIdentifiers []ExtractedIdentifier      `json:"extracted_identifiers,omitempty"`
 	ExternalIdentifiers  []ExternalIdentifierRecord `json:"external_identifiers,omitempty"`
+	// Absorbed is set by Create when an existing entry took a carried check in
+	// place of a new entry. ID then names that existing entry.
+	Absorbed bool `json:"absorbed,omitempty"`
 }
 
 type JournalEntryChildSummary struct {

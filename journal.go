@@ -33,6 +33,26 @@ type CreateEntryInput struct {
 	RetractedIdentifierIDs     []string
 	ExternalIdentifiers        []ExternalIdentifierInput
 	ExtractExternalIdentifiers bool
+	CarriedChecks              []CarriedCheck
+}
+
+// CarriedCheck names a provider check result that a new entry carries. SCAMBUS
+// asks the provider for the result that Block.Ref names and stores the
+// provider's answer. Only an automation key can send one.
+type CarriedCheck struct {
+	Provider string `json:"provider"`
+	// IdentifierRef names an identifier lookup of the same entry by its Ref.
+	// IdentifierID names a linked identifier instead.
+	IdentifierRef string       `json:"identifier_ref,omitempty"`
+	IdentifierID  string       `json:"identifier_id,omitempty"`
+	Block         CarriedBlock `json:"block"`
+}
+
+// CarriedBlock is the provider reference of a carried result, and the
+// reference of an earlier result of the same provider that it corrects.
+type CarriedBlock struct {
+	Ref      string `json:"ref"`
+	Corrects string `json:"corrects,omitempty"`
 }
 
 type createEntryBody struct {
@@ -56,10 +76,12 @@ type createEntryBody struct {
 	RetractedIdentifierIDs     []string                  `json:"retracted_identifier_ids,omitempty"`
 	ExternalIdentifiers        []ExternalIdentifierInput `json:"external_identifiers,omitempty"`
 	ExtractExternalIdentifiers bool                      `json:"extract_external_identifiers,omitempty"`
+	CarriedChecks              []CarriedCheck            `json:"carried_checks,omitempty"`
 }
 
 type createEntryResponse struct {
 	ID                   string                `json:"id"`
+	Absorbed             bool                  `json:"absorbed"`
 	FailedIdentifiers    []FailedIdentifier    `json:"failed_identifiers"`
 	ExtractedIdentifiers []ExtractedIdentifier `json:"extracted_identifiers"`
 }
@@ -85,6 +107,7 @@ func (in CreateEntryInput) body() createEntryBody {
 		RetractedIdentifierIDs:     in.RetractedIdentifierIDs,
 		ExternalIdentifiers:        in.ExternalIdentifiers,
 		ExtractExternalIdentifiers: in.ExtractExternalIdentifiers,
+		CarriedChecks:              in.CarriedChecks,
 	}
 
 	switch {
@@ -99,6 +122,9 @@ func (in CreateEntryInput) body() createEntryBody {
 }
 
 // Create posts the entry, then reloads it because the API returns only an id.
+// When an existing entry absorbed a carried check, SCAMBUS creates no entry:
+// Create returns the id of the entry that holds the result, with Absorbed set,
+// and does not reload it.
 func (s *JournalService) Create(ctx context.Context, in CreateEntryInput) (*JournalEntry, error) {
 	if in.Type == "" {
 		return nil, fmt.Errorf("%w: entry type is required", ErrValidation)
@@ -107,6 +133,9 @@ func (s *JournalService) Create(ctx context.Context, in CreateEntryInput) (*Jour
 	var created createEntryResponse
 	if err := s.client.post(ctx, "/journal-entries", in.body(), &created); err != nil {
 		return nil, err
+	}
+	if created.Absorbed {
+		return &JournalEntry{ID: created.ID, Absorbed: true}, nil
 	}
 
 	entry, err := s.Get(ctx, created.ID)
